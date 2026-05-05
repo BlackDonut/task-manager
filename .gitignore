@@ -1,0 +1,52 @@
+# =============================================================================
+# .gitignore — プロジェクトルート
+# =============================================================================
+
+# --- 環境変数・シークレット（絶対にコミットしない） ---
+.env
+.env.local
+.env.*.local
+.devcontainer/.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# --- 仮想環境 ---
+.venv/
+venv/
+env/
+
+# --- テスト・カバレッジ ---
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- 型チェック・Lint キャッシュ ---
+.mypy_cache/
+.ruff_cache/
+
+# --- IDE ---
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- ログ ---
+*.log
+logs/
+
+# --- Alembic（自動生成キャッシュは除外不要だが念のため） ---
+# alembic/versions/__pycache__ は上の __pycache__/ で対応済み

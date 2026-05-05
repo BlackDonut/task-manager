@@ -1,0 +1,49 @@
+# EditorConfig — https://editorconfig.org
+# 全エディタ（VS Code / IntelliJ / Vim 等）に適用。
+# VS Code は EditorConfig for VS Code 拡張で自動適用される。
+
+root = true
+
+# ============================================================
+# 全ファイル共通
+# ============================================================
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# ============================================================
+# フロントエンド（TypeScript / JavaScript / JSON / CSS）
+# ============================================================
+[*.{ts,tsx,js,jsx,mjs,cjs}]
+indent_size = 2
+
+[*.{json,jsonc}]
+indent_size = 2
+
+[*.{css,scss,html}]
+indent_size = 2
+
+# ============================================================
+# 設定ファイル類
+# ============================================================
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.toml]
+indent_size = 4
+
+# ============================================================
+# Markdown（末尾スペースはリストの改行に使うため無効化）
+# ============================================================
+[*.md]
+trim_trailing_whitespace = false
+
+# ============================================================
+# Windows バッチ / PowerShell（CRLF が必要な場合）
+# ============================================================
+[*.{bat,cmd,ps1}]
+end_of_line = crlf

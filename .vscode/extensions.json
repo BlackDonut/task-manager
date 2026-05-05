@@ -1,0 +1,53 @@
+{
+  "recommendations": [
+    // ===== Python 基本 =====
+    // Python 言語サポート（デバッグ・インタープリター管理・テストランナー）
+    "ms-python.python",
+    // Pylance（型推論・補完・Go to Definition。mypy --strict と併用）
+    "ms-python.vscode-pylance",
+    // Ruff（Lint + Format を 1 拡張で実行。pyproject.toml の [tool.ruff] に従う）
+    "charliermarsh.ruff",
+    // mypy（型チェック。保存時に --strict モードで実行）
+    "ms-python.mypy-type-checker",
+
+    // ===== フロントエンド（TypeScript / React）=====
+    // ESLint（TypeScript / React の Lint。frontend/eslint.config.js に従う）
+    "dbaeumer.vscode-eslint",
+    // Vitest（テストランナー UI。frontend/vitest.config.ts のテストをエディターから実行）
+    "vitest.explorer",
+
+    // ===== テスト =====
+    // E2E テスト（Playwright。テストの実行・デバッグ・トレースビューアー）
+    "ms-playwright.playwright",
+
+    // ===== インフラ・DB =====
+    // SQL Server（DB クエリ・スキーマ参照・テーブル定義の確認）
+    "ms-mssql.mssql",
+
+    // ===== GitHub Copilot =====
+    // GitHub Copilot は GitHub Copilot Chat に統合
+    "GitHub.copilot-chat",
+
+    // ===== ドキュメント =====
+    // Mermaid プレビュー（docs/ の ER 図・シーケンス図の描画）
+    "bierner.markdown-mermaid",
+    // Markdown lint（docs/ の品質維持。見出し階層・改行ルールを自動チェック）
+    "DavidAnson.vscode-markdownlint",
+
+    // ===== DX 向上 =====
+    // インラインエラー表示（mypy・Ruff のエラーをエディタ行内に即座表示。初心者の気付き支援）
+    "usernamehw.errorlens",
+    // GitLens（8 名並行開発向け。blame・PR 追跡・コミット履歴をエディタで確認）
+    "eamodio.gitlens",
+    // YAML（.github/hooks/ 等の YAML ファイルの補完・バリデーション）
+    "redhat.vscode-yaml",
+    // TOML（pyproject.toml の補完・バリデーション。Ruff/mypy 設定の SSOT を安全に編集するために必須）
+    "tamasfe.even-better-toml",
+    // JSON / Markdown / YAML 用フォーマッター
+    "esbenp.prettier-vscode"
+  ],
+  "unwantedRecommendations": [
+    // Prisma ORM（本プロジェクトは SQLAlchemy + SQL Server 構成）
+    "prisma.prisma"
+  ]
+}
