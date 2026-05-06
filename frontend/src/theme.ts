@@ -246,7 +246,7 @@ const theme = createTheme({
           padding: '6px 10px',
           fontSize: '12px',
         },
-        inputSizeSmall: {
+        sizeSmall: {
           padding: '4px 8px',
           fontSize: '12px',
         },

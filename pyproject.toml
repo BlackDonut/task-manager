@@ -20,6 +20,10 @@ dependencies = [
     "ldap3>=2.9.1",
     "babel>=2.16.0",
     "python-multipart>=0.0.9",
+    # DB: SQL Server (aioodbc = async ODBC wrapper over pyodbc)
+    # 前提: ODBC Driver 17 or 18 for SQL Server がホストにインストールされていること
+    "sqlalchemy[asyncio]>=2.0.0",
+    "aioodbc>=0.5.0",
 ]
 
 [project.optional-dependencies]

@@ -57,6 +57,17 @@ class Settings(BaseSettings):  # type: ignore[explicit-any]
         description="ファイルストレージルートパス。docs/guides/environment-variables.md 参照",
     )
 
+    # --- データベース (SQL Server) ---
+    # SA 認証例（.env の DATABASE_URL に設定する）:
+    #   DATABASE_URL=mssql+pyodbc://sa:<password>@localhost:1433/<db>?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+    # Windows 認証例:
+    #   DATABASE_URL=mssql+pyodbc://.//<db>?driver=ODBC+Driver+18+for+SQL+Server&Trusted_Connection=yes&TrustServerCertificate=yes
+    # ※ aioodbc への変換は app/core/database.py が行う
+    database_url: str = Field(
+        default="mssql+pyodbc://./task_manager_db?driver=ODBC+Driver+18+for+SQL+Server&Trusted_Connection=yes&TrustServerCertificate=yes",
+        description="SQLAlchemy 接続文字列（pyodbc スキーム）。非同期エンジン生成時に aioodbc へ変換される。",
+    )
+
     # --- ロギング ---
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["json", "console"] = "json"
