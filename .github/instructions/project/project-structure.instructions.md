@@ -6,6 +6,40 @@ description: "プロジェクトのディレクトリ構造・モジュール命
 
 ## ディレクトリ構造
 
+```
+task-manager/
+├── app/
+│   ├── main.py                     # FastAPI アプリ起動・ルーター登録
+│   ├── core/                       # インフラ基盤（features/ からの参照のみ可）
+│   │   ├── auth/                   # 認証 Depends・セッション・権限定義
+│   │   ├── constants/              # アプリケーション定数
+│   │   ├── dependencies/           # DI ファクトリ（ページネーション等）
+│   │   ├── i18n_resources/         # 翻訳ファイル（ja / en / zh-CN / vi）
+│   │   ├── middleware/             # エラーハンドリング・リクエスト ID 等
+│   │   ├── schemas/                # 共通 Pydantic スキーマ
+│   │   └── types/                  # 共通型定義（DAG・権限条件等）
+│   ├── common/                     # ビジネス共通ユーティリティ（features/ からの参照のみ可）
+│   │   ├── bulk_operation/         # 一括操作 Service
+│   │   ├── middleware/             # 監査ミドルウェア
+│   │   └── utils/                  # ユーティリティ関数群
+│   ├── features/                   # ドメイン機能（下記ネストルール参照）
+│   │   └── <domain>/               # ドメイングループ（例: tickets / projects）
+│   │       └── <sub>/              # サブ機能（例: list / gantt / risk）
+│   │           ├── router.py       # FastAPI エンドポイント
+│   │           ├── service.py      # ビジネスロジック（Result パターン）
+│   │           ├── repository.py   # SQLAlchemy クエリ（OrganizationScope 付き）
+│   │           └── schemas.py      # Pydantic v2 スキーマ（入出力型）
+│   └── models/                     # SQLAlchemy モデル（複数ドメインで共有するもの）
+├── frontend/                       # React フロントエンド
+│   └── src/
+│       ├── api/                    # API クライアント・型定義・エンドポイント定義
+│       ├── components/             # 共通コンポーネント
+│       └── pages/                  # SCR{3桁連番}_{機能名}Page.tsx
+├── tests/                          # テスト（app/ 配下のミラー構造）
+├── docs/                           # 仕様・設計ドキュメント
+└── scripts/                        # 運用スクリプト
+```
+
 ## 命名規則
 
 | 対象            | 規則        | 例                     |

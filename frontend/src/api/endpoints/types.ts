@@ -12,7 +12,7 @@
 
 export type TicketStatus = 'new' | 'in_progress' | 'resolved' | 'closed' | 'rejected'
 export type TicketPriority = 'urgent' | 'high' | 'normal' | 'low'
-export type TicketTracker = 'bug' | 'feature' | 'support' | 'task'
+export type TicketTracker = 'bug' | 'feature' | 'support' | 'task' | 'phase'
 
 // ---- レスポンス型 -----------------------------------------------------------
 
@@ -38,6 +38,10 @@ export interface TicketResponse {
   due_date: string | null
   updated_at: string
   done_ratio: number
+  /** 階層深度。0=ルート/フェーズ, 1=子, 2=孫, 3=曾孫 */
+  depth: number
+  /** 先行チケット ID リスト（前後関係） */
+  predecessor_ids: number[]
 }
 
 export interface TicketListResponse {
@@ -109,6 +113,10 @@ export interface GanttTicketResponse {
   /** 期日 (YYYY-MM-DD)。未設定の場合は null */
   due_date: string | null
   assignee: AssigneeResponse | null
+  /** 階層深度。0=ルート/フェーズ, 1=子, 2=孫, 3=曾孫 */
+  depth: number
+  /** 先行チケット ID リスト（前後関係） */
+  predecessor_ids: number[]
 }
 
 export interface GanttTicketListResponse {
@@ -124,4 +132,58 @@ export interface GanttTicketQuery {
   tracker?: TicketTracker | null
   priority?: TicketPriority | null
   assignee_id?: number | null
+}
+
+// ---- リスクダッシュボード型 ------------------------------------------------
+
+/**
+ * リスクダッシュボード サマリーカード集計値。
+ * 仕様ソース: app/features/tickets/risk/schemas.py
+ */
+export interface RiskSummary {
+  /** 期限超過チケット数（status が resolved/closed/rejected 以外） */
+  overdue_count: number
+  /** 期限 3 日以内チケット数（未超過・未完了） */
+  at_risk_count: number
+  /** 担当者未割当の未完了チケット数 */
+  unassigned_count: number
+  /** new + in_progress の合計チケット数 */
+  in_progress_count: number
+}
+
+/** 製品別の進捗・遅延集計。 */
+export interface ProductRiskSummary {
+  product: ProductResponse
+  total_count: number
+  avg_progress: number
+  overdue_count: number
+}
+
+/** リスク一覧に表示するチケット 1 件。 */
+export interface RiskTicketResponse {
+  id: number
+  subject: string
+  product: ProductResponse
+  status: TicketStatus
+  priority: TicketPriority
+  tracker: TicketTracker
+  due_date: string | null
+  /** 正値 = 超過日数、負値 = 残り日数、0 = 当日。due_date が null の場合は 0 */
+  overdue_days: number
+  assignee: AssigneeResponse | null
+  done_ratio: number
+  /** 先行チケット ID リスト（前後関係） */
+  predecessor_ids: number[]
+}
+
+/** リスクダッシュボード レスポンス全体。 */
+export interface RiskDashboardResponse {
+  summary: RiskSummary
+  product_summaries: ProductRiskSummary[]
+  /** 遅延中 + 期限 3 日以内のチケット（最大 200 件） */
+  risk_tickets: RiskTicketResponse[]
+}
+
+export interface RiskDashboardQuery {
+  project_id?: number | null
 }

@@ -11,6 +11,8 @@ import type {
   GanttTicketQuery,
   ProductListResponse,
   ProjectListResponse,
+  RiskDashboardQuery,
+  RiskDashboardResponse,
   TicketListQuery,
   TicketListResponse,
 } from './types'
@@ -24,6 +26,10 @@ export const ticketsApi = {
   /** ガントチャート用チケット一覧取得（フィルタ付き・最大 500 件・ページネーションなし） */
   getGanttList: (query?: GanttTicketQuery) =>
     apiClient.get<GanttTicketListResponse>('/tickets/gantt', { params: query }),
+
+  /** リスクダッシュボード取得（遅延・期限直前・未割当の集計 + チケット一覧） */
+  getRiskSummary: (query?: RiskDashboardQuery) =>
+    apiClient.get<RiskDashboardResponse>('/tickets/risk-summary', { params: query }),
 }
 
 /** プロジェクト API */

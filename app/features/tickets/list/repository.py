@@ -1,6 +1,11 @@
 """チケット一覧 Repository（SQL Server 実装）。
 
 DB: SQL Server / SQLAlchemy async (aioodbc)
+仕様ソース: docs/ 未定義（初期実装）
+画面: SCR-T001（チケット一覧）
+業務制約:
+  - delete_flg == 0 フィルタは筆略禁止（論理削除 L1）
+  - N+1 クエリ禁止: product / assignee を joinedload、前後関係を selectinload で一括取得
 # TODO(domain): インデックス設計は DB 設計書確定後に見直すこと
 """
 
@@ -8,7 +13,7 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.common.logger import get_logger
 from app.core.auth.models import OrganizationScope
@@ -21,7 +26,7 @@ from app.features.tickets.list.schemas import (
     TicketResponse,
 )
 from app.models.product import ProductOrm
-from app.models.ticket import TicketOrm
+from app.models.ticket import TicketDependencyOrm, TicketOrm  # noqa: F401 — TicketDependencyOrm をインポートしてメタデータに登録する
 
 logger = get_logger(component="tickets.list.repository")
 
@@ -44,6 +49,8 @@ def _to_ticket_response(t: TicketOrm) -> TicketResponse:
         due_date=t.due_date.isoformat() if t.due_date is not None else None,
         updated_at=t.updated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         done_ratio=t.done_ratio,
+        depth=t.depth,
+        predecessor_ids=[dep.predecessor_id for dep in t.dependencies_as_successor],
     )
 
 
@@ -60,8 +67,16 @@ class TicketListRepository:
     ) -> Result[TicketListResponse]:
         """フィルタ・ページネーションを適用してチケット一覧を返す。
 
-        N+1 回避: project / assignee を joinedload で一括取得する。
-        delete_flg == 0 フィルタは省略禁止（論理削除 L1）。
+        N+1 回避: product / assignee を joinedload、前後関係を selectinload で一括取得する。
+        delete_flg == 0 フィルタは筆略禁止（論理削除 L1）。
+
+        Args:
+            query: フィルタ条件（project_id / product_id / status 等）とページネーション設定
+            scope: 組織スコープ（将来のマルチテナント対応時に使用）
+
+        Returns:
+            Ok(TicketListResponse): フィルタ後チケット一覧と総件数・ページ情報
+            Err(AppError): DB アクセス失敗時
         """
         try:
             # --- フィルタ条件構築 ---
@@ -98,9 +113,13 @@ class TicketListRepository:
                 .options(
                     joinedload(TicketOrm.product),
                     joinedload(TicketOrm.assignee),
+                    # 前後関係: selectinload でまとめて取得（joinedload は Collection に非推奨）
+                    selectinload(TicketOrm.dependencies_as_successor),
                 )
                 .where(*base_where)
-                .order_by(TicketOrm.updated_at.desc())
+                # 製品グループ表示のため product_id 昇順を第1キーにして同一製品チケットを連続させる。
+                # 製品内は更新日時降順で最新チケットを先頭に表示する。
+                .order_by(TicketOrm.product_id.asc(), TicketOrm.updated_at.desc())
                 .offset((query.page - 1) * query.page_size)
                 .limit(query.page_size)
             )

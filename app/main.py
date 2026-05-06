@@ -117,6 +117,11 @@ def create_app() -> FastAPI:
 
     app.include_router(tickets_gantt_router)
 
+    # リスクダッシュボード（SCR-D001）
+    from app.features.tickets.risk.router import router as tickets_risk_router
+
+    app.include_router(tickets_risk_router)
+
     # プロジェクト一覧（チケットフィルタ用）
     from app.features.projects.list.router import router as projects_router
 

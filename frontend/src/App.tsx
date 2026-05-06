@@ -14,6 +14,9 @@ const SCR001_TicketListPage = lazy(
 const SCR002_GanttChartPage = lazy(
   () => import('./pages/SCR002_GanttChartPage'),
 )
+const SCR003_RiskDashboardPage = lazy(
+  () => import('./pages/SCR003_RiskDashboardPage'),
+)
 
 function PageLoader() {
   return (
@@ -32,6 +35,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/tickets" replace />} />
             <Route path="/tickets" element={<SCR001_TicketListPage />} />
             <Route path="/gantt" element={<SCR002_GanttChartPage />} />
+            <Route path="/risk" element={<SCR003_RiskDashboardPage />} />
           </Routes>
         </AppLayout>
       </Suspense>

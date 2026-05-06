@@ -32,9 +32,11 @@ class GanttTicketResponse(BaseModel):
     priority: TicketPriority
     tracker: TicketTracker
     done_ratio: int = Field(ge=0, le=100, description="進捗率 (%)")
+    depth: int = Field(ge=0, le=3, default=0, description="階層深度。0=ルート/フェーズ, 1=子, 2=孫, 3=曾孫")
     start_date: str = Field(description="開始日 (YYYY-MM-DD)。チケット作成日を使用")
     due_date: str | None = Field(default=None, description="期日 (YYYY-MM-DD)。未設定の場合は None")
     assignee: AssigneeResponse | None = Field(default=None, description="担当者（未割当の場合は None）")
+    predecessor_ids: list[int] = Field(default_factory=list, description="先行チケット ID リスト（前後関係）")
 
 
 class GanttTicketListResponse(BaseModel):

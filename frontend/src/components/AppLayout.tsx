@@ -9,6 +9,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 const NAV_ITEMS = [
   { label: 'チケット一覧', path: '/tickets' },
   { label: 'ガントチャート', path: '/gantt' },
+  { label: '遅延・リスク管理', path: '/risk' },
 ] as const
 
 interface AppLayoutProps {

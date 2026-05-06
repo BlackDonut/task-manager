@@ -41,62 +41,69 @@ function section(title) {
 
 // --- pre blocked ---
 const preBlocked = [
-  fmt("force push",        rx(join_("git",W,"push",W,".*--force(?!",W0,"-with-lease)"))),
-  fmt("hard reset",        rx(join_("git",W,"reset",W,"--hard"))),
-  fmt("clean forced",      rx(join_("git",W,"clean",W,"-",AZ,"f"), "i")),
-  fmt("recursive del",     rx(join_("r","m",W,"-",AZ,"r",AZ,"f"), "i")),
-  fmt("PS Remove",         rx(join_("Remove","-Item",W,".*-Recurse",W,".*-Force"), "i")),
-  fmt("win dir del",       rx(join_("r","m","dir",W,"\\/s",W,"\\/q"), "i")),
-  fmt("sql tbl drop",      rx(join_("D","ROP",W,"TABLE"), "i")),
-  fmt("sql db drop",       rx(join_("D","ROP",W,"DATABASE"), "i")),
-  fmt("sql truncate",      rx(join_("TR","UNCATE",W,"TABLE"), "i")),
-  fmt("alembic base",      rx(join_("alembic",W,"downgrade",W,"base"))),
-  fmt("alembic stamp",     rx(join_("alembic",W,"stamp",W))),
-  fmt("cat secret",        rx(join_("cat",W,".*\\.(env|pem|key|p12|pfx)"))),
-  fmt("PS Get secret",     rx(join_("Get-Content",W,".*\\.(env|pem|key|p12|pfx)"), "i")),
-  fmt("win type secret",   rx(join_(B,"type",W,".*\\.(env|pem|key|p12|pfx)"), "i")),
+  fmt("force push", rx(join_("git", W, "push", W, ".*--force(?!", W0, "-with-lease)"))),
+  fmt("hard reset", rx(join_("git", W, "reset", W, "--hard"))),
+  fmt("clean forced", rx(join_("git", W, "clean", W, "-", AZ, "f"), "i")),
+  fmt("recursive del", rx(join_("r", "m", W, "-", AZ, "r", AZ, "f"), "i")),
+  fmt("PS Remove", rx(join_("Remove", "-Item", W, ".*-Recurse", W, ".*-Force"), "i")),
+  fmt("win dir del", rx(join_("r", "m", "dir", W, "\\/s", W, "\\/q"), "i")),
+  fmt("sql tbl drop", rx(join_("D", "ROP", W, "TABLE"), "i")),
+  fmt("sql db drop", rx(join_("D", "ROP", W, "DATABASE"), "i")),
+  fmt("sql truncate", rx(join_("TR", "UNCATE", W, "TABLE"), "i")),
+  fmt("alembic base", rx(join_("alembic", W, "downgrade", W, "base"))),
+  fmt("alembic stamp", rx(join_("alembic", W, "stamp", W))),
+  fmt("cat secret", rx(join_("cat", W, ".*\\.(env|pem|key|p12|pfx)"))),
+  fmt("PS Get secret", rx(join_("Get-Content", W, ".*\\.(env|pem|key|p12|pfx)"), "i")),
+  fmt("win type secret", rx(join_(B, "type", W, ".*\\.(env|pem|key|p12|pfx)"), "i")),
 ];
 
 // --- pre confirm ---
 const preConfirm = [
-  fmt("branch delete",     rx(join_("git",W,"branch",W,"-[Dd]"))),
-  fmt("force-with-lease",  rx(join_("git",W,"push",W,".*--force-with-lease"))),
-  fmt("npm publish",       rx(join_("npm",W,"publish"))),
-  fmt("pnpm publish",      rx(join_("pnpm",W,"publish"))),
-  fmt("twine upload",      rx(join_("twine",W,"upload"))),
-  fmt("alembic upgrade",   rx(join_("alembic",W,"upgrade"))),
-  fmt("alembic down",      rx(join_("alembic",W,"downgrade",W,"(?!base)"))),
-  fmt("alembic autogen",   rx(join_("alembic",W,"revision",W,"--autogenerate"))),
-  fmt("docker sys prune",  rx(join_("docker",W,"system",W,"prune"))),
-  fmt("docker vol prune",  rx(join_("docker",W,"volume",W,"prune"))),
+  fmt("governance file edit", rx(String.raw`\.github[\\/](copilot-instructions\.md|GUIDE\.md|(instructions|agents|prompts)[\\/])`)),
+  fmt("branch delete", rx(join_("git", W, "branch", W, "-[Dd]"))),
+  fmt("force-with-lease", rx(join_("git", W, "push", W, ".*--force-with-lease"))),
+  fmt("npm publish", rx(join_("npm", W, "publish"))),
+  fmt("pnpm publish", rx(join_("pnpm", W, "publish"))),
+  fmt("eslint autofix", rx(join_("eslint", W, ".*--fix", B))),
+  fmt("ruff format write", rx(join_("ruff", W, "format(?!", W, "--check)", B))),
+  fmt("ruff check fix", rx(join_("ruff", W, "check", W, ".*--fix", B))),
+  fmt("twine upload", rx(join_("twine", W, "upload"))),
+  fmt("alembic upgrade", rx(join_("alembic", W, "upgrade"))),
+  fmt("alembic down", rx(join_("alembic", W, "downgrade", W, "(?!base)"))),
+  fmt("alembic autogen", rx(join_("alembic", W, "revision", W, "--autogenerate"))),
+  fmt("docker sys prune", rx(join_("docker", W, "system", W, "prune"))),
+  fmt("docker vol prune", rx(join_("docker", W, "volume", W, "prune"))),
+  fmt("file delete", rx(String.raw`(^|\s)(rm|del)\s+(?!-)`, "i")),
+  fmt("PS remove item", rx(join_("Remove", "-Item", B), "i")),
+  fmt("win rmdir", rx(join_(B, "r", "m", "dir", B), "i")),
 ];
 
 // --- L1 Python ---
 const l1Py = [
-  fmt("Any 型使用禁止",            rx(String.raw`:${W0}Any${B}|${B}Any\]|->${W0}Any${B}|\[Any[,\]]|Optional\[Any\]`)),
-  fmt("PII（メールアドレス）",      rx(String.raw`["'][\w.-]+@[\w.-]+\.(com|jp|co\.jp|net|org)["']`)),
-  fmt("PII（電話番号）",            rx(String.raw`["']\d{2,4}-\d{2,4}-\d{3,4}["']`)),
-  fmt("API キーのハードコード",     rx(String.raw`api[_-]?key${W0}[:=]${W0}["'][^"']+["']`, "i")),
-  fmt("パスワードのハードコード",   rx(String.raw`password${W0}[:=]${W0}["'][^"']{3,}["']`, "i")),
+  fmt("Any 型使用禁止", rx(String.raw`:${W0}Any${B}|${B}Any\]|->${W0}Any${B}|\[Any[,\]]|Optional\[Any\]`)),
+  fmt("PII（メールアドレス）", rx(String.raw`["'][\w.-]+@[\w.-]+\.(com|jp|co\.jp|net|org)["']`)),
+  fmt("PII（電話番号）", rx(String.raw`["']\d{2,4}-\d{2,4}-\d{3,4}["']`)),
+  fmt("API キーのハードコード", rx(String.raw`api[_-]?key${W0}[:=]${W0}["'][^"']+["']`, "i")),
+  fmt("パスワードのハードコード", rx(String.raw`password${W0}[:=]${W0}["'][^"']{3,}["']`, "i")),
   fmt("シークレットのハードコード", rx(String.raw`secret[_-]?key${W0}[:=]${W0}["'][^"']+["']`, "i")),
-  fmt("スタックトレース漏洩",       rx(String.raw`detail${W0}=${W0}(str\(e|traceback|repr\(e)`)),
-  fmt("SQL injection f-string",     rx(String.raw`f["'](?:SELECT|INSERT|UPDATE|DELETE)${B}`, "i")),
+  fmt("スタックトレース漏洩", rx(String.raw`detail${W0}=${W0}(str\(e|traceback|repr\(e)`)),
+  fmt("SQL injection f-string", rx(String.raw`f["'](?:SELECT|INSERT|UPDATE|DELETE)${B}`, "i")),
 ];
 
 // --- L1 TypeScript ---
 const l1TS = [
-  fmt("any 型使用禁止",            rx(String.raw`:${W0}any${B}|<any>|as${W}any${B}`)),
-  fmt("dangerouslySetInnerHTML",    rx("dangerouslySetInnerHTML")),
-  fmt("API キーのハードコード",     rx(String.raw`api[_-]?key${W0}[:=]${W0}["'][^"']+["']`, "i")),
-  fmt("パスワードのハードコード",   rx(String.raw`password${W0}[:=]${W0}["'][^"']{3,}["']`, "i")),
+  fmt("any 型使用禁止", rx(String.raw`:${W0}any${B}|<any>|as${W}any${B}`)),
+  fmt("dangerouslySetInnerHTML", rx("dangerouslySetInnerHTML")),
+  fmt("API キーのハードコード", rx(String.raw`api[_-]?key${W0}[:=]${W0}["'][^"']+["']`, "i")),
+  fmt("パスワードのハードコード", rx(String.raw`password${W0}[:=]${W0}["'][^"']{3,}["']`, "i")),
 ];
 
 // --- L2 Python ---
 const l2Py = [
-  fmt("datetime.now() 直接使用",     rx("datetime\\.now\\(\\)")),
-  fmt("相対インポート使用",          rx(String.raw`from${W}\.\w+${W}import`)),
+  fmt("datetime.now() 直接使用", rx("datetime\\.now\\(\\)")),
+  fmt("相対インポート使用", rx(String.raw`from${W}\.\w+${W}import`)),
   fmt("session.begin() 直接呼び出し", rx("session\\.begin\\(\\)")),
-  fmt("Service raise 伝播",          rx(String.raw`raise${W}HTTPException`)),
+  fmt("Service raise 伝播", rx(String.raw`raise${W}HTTPException`)),
 ];
 
 // --- ファイル生成 ---

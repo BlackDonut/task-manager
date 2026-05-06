@@ -32,6 +32,7 @@ TicketTracker = Literal[
     "feature",      # 機能
     "support",      # サポート
     "task",         # タスク
+    "phase",        # フェーズ（タスクのグループ化。常に depth=0 のルートレベル）
 ]
 
 # ---- レスポンス -----------------------------------------------------------
@@ -71,6 +72,8 @@ class TicketResponse(BaseModel):
     due_date: str | None = Field(default=None, description="期日 (YYYY-MM-DD)。未設定の場合は None")
     updated_at: str = Field(description="最終更新日時 (ISO 8601 UTC)")
     done_ratio: int = Field(ge=0, le=100, description="進捗率 (%)")
+    depth: int = Field(ge=0, le=3, default=0, description="階層深度。0=ルート/フェーズ, 1=子, 2=孫, 3=曾孫")
+    predecessor_ids: list[int] = Field(default_factory=list, description="先行チケット ID リスト（前後関係）")
 
 
 class TicketListResponse(BaseModel):

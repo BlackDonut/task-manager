@@ -1,8 +1,10 @@
 /**
  * チケット一覧ページ（SCR-T001）。
- * チケットを製品単位でグループ化し、折りたたみ可能なツリー形式で表示する。
+ * チケットを製品単位でグループ化し、フェーズ行・折りたたみ可能な 3 階層ツリーで表示する。
+ * 仕様ソース: docs/ 未定義（初期実装）
+ * 業務制約: tracker="phase" は製品グループ内のグループ行として表示する。親子関係は depth <= 3 まで。
  */
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Alert,
@@ -82,20 +84,30 @@ const TRACKER_LABEL: Record<TicketTracker, string> = {
   feature: '機能',
   support: 'サポート',
   task: 'タスク',
+  phase: 'フェーズ',
 }
 
+/**
+ * 完了扱いとするステータス。
+ * Set を使用して O(1) ルックアップを保証する。期限超過判定・行透過度の 2 箇所で参照する。
+ */
+const CLOSED_STATUSES = new Set<TicketStatus>(['resolved', 'closed', 'rejected'])
+
+/** 期限超過かどうかを判定する。完了済みステータスは超過扱いとしない。 */
 function isOverdue(dueDate: string | null, status: TicketStatus): boolean {
   if (dueDate === null) return false
-  if (status === 'resolved' || status === 'closed') return false
+  if (CLOSED_STATUSES.has(status)) return false
   return dueDate < new Date().toISOString().slice(0, 10)
 }
 
 /** 製品グループ型 */
 interface ProductGroup {
   product: ProductResponse
-  /** parent_id === null のチケット（ルートチケット） */
+  /** tracker="phase" のルートチケット（フェーズ） */
+  phaseTickets: TicketResponse[]
+  /** フェーズに属さないルートチケット（tracker != "phase"） */
   rootTickets: TicketResponse[]
-  /** 親チケット ID → 子チケット一覧 */
+  /** 親チケット ID → 子チケット一覧（全深度共通） */
   childrenMap: Map<number, TicketResponse[]>
   /** グループ内の全チケット数（ヘッダー件数表示用） */
   totalCount: number
@@ -109,6 +121,7 @@ interface ProductGroupHeaderProps {
   onToggle: () => void
 }
 
+/** 製品グループの折りたたみ可能なヘッダー行。クリックでグループ全体を展開/折りたたみする。 */
 function ProductGroupHeader({ group, collapsed, onToggle }: ProductGroupHeaderProps) {
   return (
     <TableRow
@@ -144,25 +157,75 @@ function ProductGroupHeader({ group, collapsed, onToggle }: ProductGroupHeaderPr
   )
 }
 
+// ---- フェーズ行 ----------------------------------------------------------
+
+interface PhaseRowProps {
+  phase: TicketResponse
+  collapsed: boolean
+  onToggle: () => void
+}
+
+/** フェーズ（tracker="phase"）の折りたたみ可能なグループ行。配下タスクを一括展開/折りたたむ。 */
+function PhaseRow({ phase, collapsed, onToggle }: PhaseRowProps) {
+  return (
+    <TableRow
+      onClick={onToggle}
+      sx={{
+        backgroundColor: '#F0F7FF',
+        cursor: 'pointer',
+        '&:hover': { backgroundColor: '#DDEEFF' },
+        borderTop: '1px solid',
+        borderColor: 'divider',
+      }}
+    >
+      <TableCell colSpan={COL_COUNT} sx={{ py: 0.5, pl: 4 }}>
+        <Stack direction="row" sx={{ alignItems: 'center' }} spacing={0.5}>
+          <IconButton size="small" tabIndex={-1} aria-hidden sx={{ p: 0.25 }}>
+            {collapsed
+              ? <KeyboardArrowRightIcon fontSize="small" />
+              : <KeyboardArrowDownIcon fontSize="small" />}
+          </IconButton>
+          <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.dark' }}>
+            {phase.subject}
+          </Typography>
+          <Chip
+            label="フェーズ"
+            size="small"
+            color="primary"
+            variant="outlined"
+            sx={{ ml: 0.5, height: 18, fontSize: '0.7rem' }}
+          />
+          {phase.due_date && (
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+              期日: {phase.due_date}
+            </Typography>
+          )}
+        </Stack>
+      </TableCell>
+    </TableRow>
+  )
+}
+
 // ---- チケット行 -----------------------------------------------------------
 
 interface TicketRowProps {
   ticket: TicketResponse
-  /** root: 製品直下チケット, child: 子チケット（インデント深め） */
-  depth?: 'root' | 'child'
+  /** 階層深度。0=ルート, 1=子, 2=孫, 3=曾孫 */
+  depth?: number
   hasChildren?: boolean
   childrenCollapsed?: boolean
   onToggle?: () => void
 }
 
-function TicketRow({ ticket, depth = 'root', hasChildren = false, childrenCollapsed = false, onToggle }: TicketRowProps) {
-  const isChild = depth === 'child'
-  // インデント: 子=8, 親（子あり）=2, ルート（子なし）=5
-  const idCellPl = isChild ? 8 : hasChildren ? 2 : 5
+/** チケット 1 件を表すテーブル行。depth に応じたインデントを付与する。 */
+function TicketRow({ ticket, depth = 0, hasChildren = false, childrenCollapsed = false, onToggle }: TicketRowProps) {
+  const isRoot = depth === 0
+  // インデント: depth に応じて増加（子あり=2+depth*3, 子なし=5+depth*3）
+  const idCellPl = (hasChildren ? 2 : 5) + depth * 3
   return (
     <TableRow
       hover
-      sx={{ opacity: ['resolved', 'closed', 'rejected'].includes(ticket.status) ? 0.6 : 1 }}
+      sx={{ opacity: CLOSED_STATUSES.has(ticket.status) ? 0.6 : 1 }}
     >
       <TableCell sx={{ pl: idCellPl }}>
         <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'nowrap' }} spacing={0}>
@@ -180,7 +243,7 @@ function TicketRow({ ticket, depth = 'root', hasChildren = false, childrenCollap
           )}
           <Typography
             variant="body2"
-            color={isChild ? 'text.secondary' : 'primary'}
+            color={isRoot ? 'primary' : 'text.secondary'}
             sx={{ fontWeight: 'bold' }}
           >
             #{ticket.id}
@@ -216,12 +279,37 @@ function TicketRow({ ticket, depth = 'root', hasChildren = false, childrenCollap
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               cursor: 'default',
-              pl: isChild ? 2 : 0,
+              pl: depth > 0 ? depth * 2 : 0,
             }}
           >
+            {depth > 0 && (
+              <Typography
+                component="span"
+                variant="body2"
+                sx={{ color: 'text.disabled', mr: 0.5, fontSize: '0.75rem' }}
+                aria-hidden
+              >
+                ↳
+              </Typography>
+            )}
             {ticket.subject}
           </Typography>
         </Tooltip>
+        {/* 前後関係: 先行チケット表示 */}
+        {ticket.predecessor_ids.length > 0 && (
+          <Stack direction="row" spacing={0.5} sx={{ mt: 0.25, pl: depth > 0 ? depth * 2 : 0, flexWrap: 'wrap' }}>
+            {ticket.predecessor_ids.map((pid) => (
+              <Chip
+                key={pid}
+                label={`先行: #${pid}`}
+                size="small"
+                variant="outlined"
+                color="default"
+                sx={{ height: 16, fontSize: '0.65rem', borderColor: 'grey.400', color: 'text.secondary' }}
+              />
+            ))}
+          </Stack>
+        )}
       </TableCell>
       <TableCell>
         <Typography variant="body2" color="text.secondary" noWrap>
@@ -263,6 +351,7 @@ interface FilterPanelProps {
   onChange: (v: TicketListQuery) => void
 }
 
+/** チケット一覧の検索・絞り込みパネル。キーワード・ステータス・優先度・トラッカーで絞り込む。 */
 function FilterPanel({ filter, onChange }: FilterPanelProps) {
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
@@ -333,6 +422,49 @@ function FilterPanel({ filter, onChange }: FilterPanelProps) {
   )
 }
 
+/**
+ * チケットとその子孫を再帰的にフラット化して TableRow 配列を返す。
+ *
+ * 表示上のインデント・展開/折りたたみを depth で制御する。
+ * depth=3 が上限（バックエンド制約）。それ以上はデータが存在しないため自然に終了する。
+ *
+ * @param ticket        起点となるチケット
+ * @param depth         現在の深度（0=フェーズ直下, 1=子, 2=孫, 3=曾孫）
+ * @param childrenMap   親チケット ID → 子チケット一覧（全深度共通）
+ * @param collapsedTickets 折りたたまれているチケット ID のセット
+ * @param onToggle      展開/折りたたみトグル時のコールバック
+ */
+function flattenTicketTree(
+  ticket: TicketResponse,
+  depth: number,
+  childrenMap: Map<number, TicketResponse[]>,
+  collapsedTickets: Set<number>,
+  onToggle: (id: number) => void,
+): JSX.Element[] {
+  const children = childrenMap.get(ticket.id) ?? []
+  const hasChildren = children.length > 0
+  const isCollapsed = collapsedTickets.has(ticket.id)
+  return [
+    <TicketRow
+      key={ticket.id}
+      ticket={ticket}
+      depth={depth}
+      hasChildren={hasChildren}
+      childrenCollapsed={isCollapsed}
+      onToggle={hasChildren ? () => onToggle(ticket.id) : undefined}
+    />,
+    ...(hasChildren && !isCollapsed
+      ? children.flatMap((child) =>
+        flattenTicketTree(child, depth + 1, childrenMap, collapsedTickets, onToggle)
+      )
+      : []),
+  ]
+}
+
+/**
+ * チケット一覧ページ本体。
+ * プロジェクトタブ・フィルタ・製品グループ別ツリーテーブルを統合する。
+ */
 export default function SCR001_TicketListPage() {
   const [filter, setFilter] = useState<TicketListQuery>({ page: 1, page_size: 25 })
   /** 選択中のタブ値。ALL_PROJECTS_TAB または project_id (number) */
@@ -355,8 +487,9 @@ export default function SCR001_TicketListPage() {
     select: (res) => res.data,
   })
 
-  /** チケットを製品 ID でグループ化し、各グループ内を親子に分離する。
+  /** チケットを製品 ID でグループ化し、各グループ内をフェーズ/ルート/子に分離する。
    * parent_id が同グループ内に存在しないチケットは root として扱う（データ不整合の吸収）。
+   * tracker="phase" かつルートレベルのチケットは phaseTickets に分類する。
    */
   const productGroups = useMemo<ProductGroup[]>(() => {
     if (!data?.items) return []
@@ -368,45 +501,53 @@ export default function SCR001_TicketListPage() {
       }
       productMap.get(ticket.product.id)!.allTickets.push(ticket)
     }
-    // 第2パス: グループ内で root / child に分類
+    // 第2パス: グループ内でフェーズ / ルート / 子に分類
     return Array.from(productMap.values()).map(({ product, allTickets }) => {
       const ticketIds = new Set(allTickets.map((t) => t.id))
+      const phaseTickets: TicketResponse[] = []
       const rootTickets: TicketResponse[] = []
       const childrenMap = new Map<number, TicketResponse[]>()
       for (const ticket of allTickets) {
-        // parent_id が null か、同グループ内に親が存在しない場合は root 扱い
         if (ticket.parent_id === null || !ticketIds.has(ticket.parent_id)) {
-          rootTickets.push(ticket)
+          // ルートレベル: フェーズか通常チケットに分類
+          if (ticket.tracker === 'phase') {
+            phaseTickets.push(ticket)
+          } else {
+            rootTickets.push(ticket)
+          }
         } else {
+          // 子チケット（全深度共通で childrenMap に集約）
           const siblings = childrenMap.get(ticket.parent_id) ?? []
           siblings.push(ticket)
           childrenMap.set(ticket.parent_id, siblings)
         }
       }
-      return { product, rootTickets, childrenMap, totalCount: allTickets.length }
+      return { product, phaseTickets, rootTickets, childrenMap, totalCount: allTickets.length }
     })
   }, [data?.items])
 
-  function toggleProduct(productId: number) {
+  /** 製品グループの折りたたみ状態をトグルする。useCallback で参照を安定化し子コンポーネントの不要な再レンダーを抑制する。 */
+  const toggleProduct = useCallback((productId: number) => {
     setCollapsedProducts((prev) => {
       const next = new Set(prev)
       if (next.has(productId)) next.delete(productId)
       else next.add(productId)
       return next
     })
-  }
+  }, [])
 
-  function toggleParentTicket(ticketId: number) {
+  /** チケット（フェーズ含む）の子展開状態をトグルする。useCallback で参照を安定化し子コンポーネントの不要な再レンダーを抑制する。 */
+  const toggleParentTicket = useCallback((ticketId: number) => {
     setCollapsedParentTickets((prev) => {
       const next = new Set(prev)
       if (next.has(ticketId)) next.delete(ticketId)
       else next.add(ticketId)
       return next
     })
-  }
+  }, [])
 
-  /** プロジェクトタブ切り替え。project_id フィルタとページをリセットする。 */
-  function handleProjectTabChange(_: React.SyntheticEvent, value: string | number) {
+  /** プロジェクトタブ切り替え。project_id フィルタとページ・折りたたみ状態をリセットする。 */
+  const handleProjectTabChange = useCallback((_: React.SyntheticEvent, value: string | number) => {
     setActiveProjectTab(value)
     setCollapsedProducts(new Set())
     setCollapsedParentTickets(new Set())
@@ -415,7 +556,7 @@ export default function SCR001_TicketListPage() {
       project_id: value === ALL_PROJECTS_TAB ? null : (value as number),
       page: 1,
     }))
-  }
+  }, [])
 
   return (
     <Box sx={{ p: 3 }}>
@@ -477,7 +618,7 @@ export default function SCR001_TicketListPage() {
                   </TableRow>
                 ))
                 : productGroups.length > 0
-                  ? /* 製品グループ別ツリー表示 */
+                  ? /* 製品グループ別ツリー表示（フェーズ対応・3階層） */
                   productGroups.flatMap((group) => {
                     const groupCollapsed = collapsedProducts.has(group.product.id)
                     return [
@@ -488,30 +629,30 @@ export default function SCR001_TicketListPage() {
                         onToggle={() => toggleProduct(group.product.id)}
                       />,
                       ...(!groupCollapsed
-                        ? group.rootTickets.flatMap((ticket) => {
-                          const children = group.childrenMap.get(ticket.id) ?? []
-                          const hasChildren = children.length > 0
-                          const parentCollapsed = collapsedParentTickets.has(ticket.id)
-                          return [
-                            <TicketRow
-                              key={ticket.id}
-                              ticket={ticket}
-                              depth="root"
-                              hasChildren={hasChildren}
-                              childrenCollapsed={parentCollapsed}
-                              onToggle={() => toggleParentTicket(ticket.id)}
-                            />,
-                            ...(hasChildren && !parentCollapsed
-                              ? children.map((child) => (
-                                <TicketRow
-                                  key={child.id}
-                                  ticket={child}
-                                  depth="child"
-                                />
-                              ))
-                              : []),
-                          ]
-                        })
+                        ? [
+                          // フェーズチケット（tracker="phase"）を先に表示
+                          ...group.phaseTickets.flatMap((phase) => {
+                            const phaseCollapsed = collapsedParentTickets.has(phase.id)
+                            const phaseChildren = group.childrenMap.get(phase.id) ?? []
+                            return [
+                              <PhaseRow
+                                key={`phase-${phase.id}`}
+                                phase={phase}
+                                collapsed={phaseCollapsed}
+                                onToggle={() => toggleParentTicket(phase.id)}
+                              />,
+                              ...(!phaseCollapsed
+                                ? phaseChildren.flatMap((task) =>
+                                  flattenTicketTree(task, 1, group.childrenMap, collapsedParentTickets, toggleParentTicket)
+                                )
+                                : []),
+                            ]
+                          }),
+                          // フェーズに属さないルートチケット
+                          ...group.rootTickets.flatMap((ticket) =>
+                            flattenTicketTree(ticket, 0, group.childrenMap, collapsedParentTickets, toggleParentTicket)
+                          ),
+                        ]
                         : []),
                     ]
                   })

@@ -39,11 +39,7 @@ export const PRE_BLOCKED = [
 
 /** @type {Array<{ name: string; pattern: RegExp }>} */
 export const PRE_CONFIRM = [
-  {
-    name: "governance file edit",
-    pattern:
-      /\.github[\\/](copilot-instructions\.md|GUIDE\.md|(instructions|agents|prompts)[\\/])/,
-  },
+  { name: "governance file edit", pattern: /\.github[\\/](copilot-instructions\.md|GUIDE\.md|(instructions|agents|prompts)[\\/])/ },
   { name: "branch delete", pattern: /git\s+branch\s+-[Dd]/ },
   { name: "force-with-lease", pattern: /git\s+push\s+.*--force-with-lease/ },
   { name: "npm publish", pattern: /npm\s+publish/ },

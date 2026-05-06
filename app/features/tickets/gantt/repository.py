@@ -1,6 +1,12 @@
 """ガントチャート Repository（SQL Server 実装）。
 
 DB: SQL Server / SQLAlchemy async (aioodbc)
+仕様ソース: docs/ 未定義（初期実装）
+画面: SCR-G001（ガントチャート）
+業務制約:
+  - delete_flg == 0 フィルタは筆略禁止（論理削除 L1）
+  - ページネーションなし・最大 500 件（_GANTT_MAX_ITEMS 定数で制御）
+  - N+1 クエリ禁止: product / assignee を joinedload、前後関係を selectinload で一括取得
 # TODO(domain): インデックス設計は DB 設計書確定後に見直すこと
 """
 
@@ -8,7 +14,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.common.logger import get_logger
 from app.core.auth.models import OrganizationScope
@@ -23,7 +29,7 @@ from app.features.tickets.list.schemas import (
     ProductResponse,
 )
 from app.models.product import ProductOrm
-from app.models.ticket import TicketOrm
+from app.models.ticket import TicketDependencyOrm, TicketOrm  # noqa: F401 — TicketDependencyOrm をインポートしてメタデータに登録する
 
 logger = get_logger(component="tickets.gantt.repository")
 
@@ -43,6 +49,7 @@ def _to_gantt_response(t: TicketOrm) -> GanttTicketResponse:
         priority=t.priority,  # type: ignore[arg-type]
         tracker=t.tracker,  # type: ignore[arg-type]
         done_ratio=t.done_ratio,
+        depth=t.depth,
         start_date=t.created_at.strftime("%Y-%m-%d"),
         due_date=t.due_date.isoformat() if t.due_date is not None else None,
         assignee=(
@@ -50,6 +57,7 @@ def _to_gantt_response(t: TicketOrm) -> GanttTicketResponse:
             if t.assignee is not None
             else None
         ),
+        predecessor_ids=[dep.predecessor_id for dep in t.dependencies_as_successor],
     )
 
 
@@ -66,9 +74,17 @@ class GanttTicketRepository:
     ) -> Result[GanttTicketListResponse]:
         """フィルタを適用してガントチャート用チケット一覧を返す。
 
-        N+1 回避: product / assignee を joinedload で一括取得する。
-        delete_flg == 0 フィルタは省略禁止（論理削除 L1）。
-        最大 _GANTT_MAX_ITEMS 件まで返す（ページネーションなし）。
+        N+1 回避: product / assignee を joinedload、前後関係を selectinload で一括取得する。
+        delete_flg == 0 フィルタは筆略禁止（論理削除 L1）。
+        最大 _GANTT_MAX_ITEMS 件まで返す（ページネーションなし・参照専用）。
+
+        Args:
+            query: フィルタ条件（project_id / product_id / status 等）
+            scope: 組織スコープ（将来のマルチテナント対応時に使用）
+
+        Returns:
+            Ok(GanttTicketListResponse): チケット一覧と総件数（最大 500 件）
+            Err(AppError): DB アクセス失敗時
         """
         try:
             # --- フィルタ条件構築 ---
@@ -98,6 +114,8 @@ class GanttTicketRepository:
                 .options(
                     joinedload(TicketOrm.product),
                     joinedload(TicketOrm.assignee),
+                    # 前後関係: selectinload でまとめて取得
+                    selectinload(TicketOrm.dependencies_as_successor),
                 )
                 .where(*base_where)
                 .order_by(TicketOrm.created_at.asc())
