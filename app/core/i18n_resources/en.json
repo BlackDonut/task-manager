@@ -1,4 +1,4 @@
-{
+﻿{
   "error.not_found": "The specified resource was not found",
   "error.validation": "Invalid input data",
   "error.forbidden": "You do not have permission to perform this action",
@@ -29,5 +29,17 @@
   "batch.deadline_notify": "Deadline Notification",
   "batch.escalation": "Escalation",
   "batch.product_lifecycle": "Product Lifecycle Update",
-  "batch.deferred_backlog_review": "Deferred Backlog Review"
+  "batch.deferred_backlog_review": "Deferred Backlog Review",
+  "release.type.initial": "Initial Release",
+  "release.type.spec_change": "Spec Change",
+  "release.type.version_upgrade": "Version Upgrade",
+  "release.type.maintenance": "Maintenance",
+  "release.status.planning": "Planning",
+  "release.status.in_progress": "In Progress",
+  "release.status.completed": "Completed",
+  "release.error.product_not_found": "The specified product was not found",
+  "release.error.not_found": "The specified work cycle was not found",
+  "escalation_rule.error.not_found": "The specified escalation rule was not found",
+  "escalation_rule.error.product_not_found": "The specified product was not found",
+  "escalation_rule.error.duplicate_product": "An escalation rule for this product already exists"
 }

@@ -29,5 +29,17 @@
   "batch.deadline_notify": "期日通知",
   "batch.escalation": "エスカレーション",
   "batch.product_lifecycle": "製品ライフサイクル更新",
-  "batch.deferred_backlog_review": "延期バックログ再レビュー"
+  "batch.deferred_backlog_review": "延期バックログ再レビュー",
+  "release.type.initial": "初回リリース",
+  "release.type.spec_change": "仕様変更",
+  "release.type.version_upgrade": "バージョンアップ",
+  "release.type.maintenance": "保守",
+  "release.status.planning": "計画中",
+  "release.status.in_progress": "進行中",
+  "release.status.completed": "完了",
+  "release.error.product_not_found": "指定された製品が見つかりません",
+  "release.error.not_found": "指定された作業サイクルが見つかりません",
+  "escalation_rule.error.not_found": "指定されたエスカレーションルールが見つかりません",
+  "escalation_rule.error.product_not_found": "指定された製品が見つかりません",
+  "escalation_rule.error.duplicate_product": "この製品のエスカレーションルールは既に存在します"
 }

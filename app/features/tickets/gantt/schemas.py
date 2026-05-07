@@ -10,13 +10,22 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.features.tickets.list.schemas import (
     AssigneeResponse,
-    ProductResponse,
     TicketPriority,
     TicketStatus,
     TicketTracker,
 )
 
 # ---- レスポンス -----------------------------------------------------------
+
+
+class GanttProductResponse(BaseModel):
+    """ガントチャート用製品レスポンス。project_id を含む（プロジェクト横断グループ化に使用）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    project_id: int = Field(description="所属プロジェクト ID（プロジェクト単位グループ化に使用）")
 
 
 class GanttTicketResponse(BaseModel):
@@ -26,7 +35,7 @@ class GanttTicketResponse(BaseModel):
 
     id: int = Field(description="チケット番号（表示用 ID）")
     subject: str = Field(description="題名")
-    product: ProductResponse
+    product: GanttProductResponse
     parent_id: int | None = Field(default=None, description="親チケット ID。ルートチケットの場合は None")
     status: TicketStatus
     priority: TicketPriority

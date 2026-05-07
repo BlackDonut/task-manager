@@ -28,9 +28,10 @@ class RiskSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     overdue_count: int = Field(description="期限超過チケット数（status が resolved/closed/rejected 以外）")
-    at_risk_count: int = Field(description="期限 3 日以内チケット数（未超過・未完了）")
+    at_risk_count: int = Field(description="期限 1 週間以内チケット数（未超過・未完了）")
     unassigned_count: int = Field(description="担当者未割当の未完了チケット数")
     in_progress_count: int = Field(description="new + in_progress の合計チケット数")
+    todo_count: int = Field(description="未着手（status=new）かつ期限が 1 週間超または期限なしのチケット数")
 
 
 class ProductRiskSummary(BaseModel):
@@ -40,7 +41,6 @@ class ProductRiskSummary(BaseModel):
 
     product: ProductResponse
     total_count: int = Field(description="製品配下の全チケット数（論理削除除外）")
-    avg_progress: int = Field(ge=0, le=100, description="進捗率の平均 (%)")
     overdue_count: int = Field(description="期限超過チケット数（未完了のみ）")
 
 
@@ -79,8 +79,14 @@ class RiskDashboardResponse(BaseModel):
     product_summaries: list[ProductRiskSummary] = Field(
         description="製品別進捗・遅延集計（overdue_count 降順・product.id 昇順）"
     )
-    risk_tickets: list[RiskTicketResponse] = Field(
-        description="遅延中 + 期限 3 日以内のチケット（期日昇順・未割当優先）。最大 200 件"
+    overdue_tickets: list[RiskTicketResponse] = Field(
+        description="期限超過チケット（due_date < 今日・期日昇順・未割当優先）。件数制限なし"
+    )
+    at_risk_tickets: list[RiskTicketResponse] = Field(
+        description="期限 1 週間以内チケット（今日 <= due_date <= 7 日後・期日昇順・未割当優先）。件数制限なし"
+    )
+    todo_tickets: list[RiskTicketResponse] = Field(
+        description="未着手（status=new）かつ期限が 1 週間超または期限なしのチケット（優先度順）。最大 200 件"
     )
 
 

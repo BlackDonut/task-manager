@@ -9,6 +9,15 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ProjectOwnerResponse(BaseModel):
+    """プロジェクト責任者情報。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="ユーザー ID")
+    display_name: str = Field(description="表示名")
+
+
 class ProjectItem(BaseModel):
     """プロジェクト 1 件のレスポンス。"""
 
@@ -16,6 +25,8 @@ class ProjectItem(BaseModel):
 
     id: int = Field(description="プロジェクト ID")
     name: str = Field(description="プロジェクト名")
+    due_date: str | None = Field(default=None, description="プロジェクト全体の期日 (YYYY-MM-DD)")
+    owner: ProjectOwnerResponse | None = Field(default=None, description="プロジェクト責任者（未設定の場合は None）")
 
 
 class ProjectListResponse(BaseModel):

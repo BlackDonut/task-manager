@@ -20,13 +20,13 @@ from app.common.logger import get_logger
 from app.core.auth.models import OrganizationScope
 from app.core.result import AppError, Err, Ok, Result
 from app.features.tickets.gantt.schemas import (
+    GanttProductResponse,
     GanttTicketListResponse,
     GanttTicketQuery,
     GanttTicketResponse,
 )
 from app.features.tickets.list.schemas import (
     AssigneeResponse,
-    ProductResponse,
 )
 from app.models.product import ProductOrm
 from app.models.ticket import TicketDependencyOrm, TicketOrm  # noqa: F401 — TicketDependencyOrm をインポートしてメタデータに登録する
@@ -43,7 +43,7 @@ def _to_gantt_response(t: TicketOrm) -> GanttTicketResponse:
     return GanttTicketResponse(
         id=t.id,
         subject=t.subject,
-        product=ProductResponse(id=t.product.id, name=t.product.name),
+        product=GanttProductResponse(id=t.product.id, name=t.product.name, project_id=t.product.project_id),
         parent_id=t.parent_id,
         status=t.status,  # type: ignore[arg-type]
         priority=t.priority,  # type: ignore[arg-type]

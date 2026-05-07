@@ -64,6 +64,7 @@ class TicketResponse(BaseModel):
     id: int = Field(description="チケット番号（表示用 ID）")
     product: ProductResponse
     parent_id: int | None = Field(default=None, description="親チケット ID。ルートチケットの場合は None")
+    release_id: int | None = Field(default=None, description="作業サイクル ID (product_releases.id)。None=サイクル未分類")
     tracker: TicketTracker
     status: TicketStatus
     priority: TicketPriority
@@ -98,10 +99,11 @@ class TicketListQuery(BaseModel):
 
     project_id: int | None = Field(default=None, description="プロジェクト ID でフィルタ（製品経由で絞り込む）")
     product_id: int | None = Field(default=None, description="製品 ID でフィルタ（直接指定）")
+    release_id: int | None = Field(default=None, description="作業サイクル ID でフィルタ（product_releases.id）")
     status: TicketStatus | None = Field(default=None, description="ステータスでフィルタ")
     priority: TicketPriority | None = Field(default=None, description="優先度でフィルタ")
     tracker: TicketTracker | None = Field(default=None, description="トラッカーでフィルタ")
     assignee_id: int | None = Field(default=None, description="担当者 ID でフィルタ")
     keyword: str | None = Field(default=None, description="題名・本文の部分一致キーワード")
     page: int = Field(default=1, ge=1)
-    page_size: int = Field(default=25, ge=1, le=100)
+    page_size: int = Field(default=100, ge=1, le=100)

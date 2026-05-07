@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.common.logger import get_logger
 from app.core.auth.models import OrganizationScope
 from app.core.result import AppError, Err, Ok, Result
-from app.features.projects.list.schemas import ProjectItem, ProjectListResponse
+from app.features.projects.list.schemas import ProjectItem, ProjectListResponse, ProjectOwnerResponse
 from app.models.project import ProjectOrm
 
 logger = get_logger(component="projects.list.repository")
@@ -34,13 +35,26 @@ class ProjectListRepository:
         try:
             stmt = (
                 select(ProjectOrm)
+                .options(joinedload(ProjectOrm.owner))
                 .where(ProjectOrm.delete_flg == 0)
                 .order_by(ProjectOrm.name)
             )
-            rows = (await self._session.execute(stmt)).scalars().all()
+            rows = (await self._session.execute(stmt)).unique().scalars().all()
 
             # レスポンス変換（try スコープ内で変換例外も捕捉）
-            items = [ProjectItem(id=p.id, name=p.name) for p in rows]
+            items = [
+                ProjectItem(
+                    id=p.id,
+                    name=p.name,
+                    due_date=p.due_date.isoformat() if p.due_date is not None else None,
+                    owner=(
+                        ProjectOwnerResponse(id=p.owner.id, display_name=p.owner.display_name)
+                        if p.owner is not None
+                        else None
+                    ),
+                )
+                for p in rows
+            ]
 
             return Ok(ProjectListResponse(items=items, total=len(items)))
         except Exception as exc:

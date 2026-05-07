@@ -1,17 +1,18 @@
 /**
  * ガントチャートページ（SCR-G001）。
- * チケットをガントチャート形式で表示する。製品単位でグループ化する。
+ * チケットをガントチャート形式で表示する。製品ヘッダーの下にフェーズ行を配置する。
  *
  * gantt-task-react v0.3.x の既知挙動と対策:
  *   1. 内部 sort(sortTasks) が displayOrder 昇順でソートする。
  *      displayOrder 未設定 = Number.MAX_VALUE 扱いで安定性が保証されないため、
- *      全タスクに連番 displayOrder を付与して製品→タスク順を確定させる。
+ *      全タスクに連番 displayOrder を付与して製品→フェーズ順を確定させる。
  *   2. 内部 useEffect → setBarTasks のためマウント直後 1 フレームだけバーが空になる。
  *      ganttVisible + Skeleton オーバーレイで blank フレームを隠す。
  *   3. overflowY: auto コンテナと競合すると縦スクロールが先頭に戻る。
  *      Paper に overflowY: hidden を設定する。
  */
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Gantt, type Task, ViewMode } from 'gantt-task-react'
 import 'gantt-task-react/dist/index.css'
@@ -20,8 +21,11 @@ import {
   Box,
   ButtonGroup,
   Button,
+  Chip,
+  Divider,
   FormControl,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
@@ -35,7 +39,6 @@ import type {
   GanttTicketQuery,
   ProjectItem,
   TicketStatus,
-  TicketTracker,
 } from '../api/endpoints/types'
 
 const GANTT_QUERY_KEY = ['tickets', 'gantt'] as const
@@ -58,11 +61,13 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
   rejected: '却下',
 }
 
-const TRACKER_LABEL: Record<TicketTracker, string> = {
-  bug: 'バグ',
-  feature: '機能',
-  support: 'サポート',
-  task: 'タスク',
+/** ステータスに対応する MUI Chip カラー。 */
+const STATUS_CHIP_COLOR: Record<TicketStatus, 'default' | 'primary' | 'warning' | 'success' | 'error'> = {
+  new: 'primary',
+  in_progress: 'warning',
+  resolved: 'success',
+  closed: 'default',
+  rejected: 'error',
 }
 
 const VIEW_MODES: [ViewMode, string][] = [
@@ -94,44 +99,44 @@ function parseLocalDate(dateStr: string): Date {
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
- * GanttTicketResponse[] を gantt-task-react の Task[] に変換する。
+ * GanttTicketResponse[] を「製品ヘッダー → フェーズ行」の Task[] に変換する。
  *
- * ● gantt-task-react v0.3.x は内部 sortTasks で displayOrder 昇順ソートするため、
- *   displayOrder を連番で付与して製品→タスク順を保証する（省略時は並び崩れの原因）。
- * ● 製品行 (type:'project') の直後にその製品のタスクを配置する（ライブラリ要件）。
+ * ● tracker==='phase' のチケットのみを行として描画する。
+ * ● 製品行 (type:'project') の直後にその製品のフェーズを配置する（ライブラリ要件）。
  * ● due_date 未設定は start + 7 日、end <= start は start + 1 日に補正する。
  * ● predecessor_ids がある場合、gantt-task-react の dependencies フィールドで矢印表示する。
- *   フィルタ後に対応タスクが存在しない ID は除外して描画エラーを防ぐ。
+ *   フィルタ後に対応フェーズが存在しない ID は除外して描画エラーを防ぐ。
  *
- * @param collapsedProductIds - 折りたたみ中の製品 ID セット（"product-{id}" 形式）
+ * @param collapsedGroupIds - 折りたたみ中のグループ ID セット（"product-{id}" 形式）
  */
-function toGanttTasks(
+function toGanttTasksByProductPhase(
   tickets: GanttTicketResponse[],
-  collapsedProductIds: ReadonlySet<string>,
+  collapsedGroupIds: ReadonlySet<string>,
 ): Task[] {
-  // フィルタ後に存在するチケット ID セット（存在しない predecessor_id を除外するために使用）
-  const allTicketIds = new Set(tickets.map((t) => t.id))
+  // フィルタ後に存在するフェーズ ID セット（存在しない predecessor_id を除外するために使用）
+  const phaseTickets = tickets.filter((t) => t.tracker === 'phase')
+  const allPhaseIds = new Set(phaseTickets.map((t) => t.id))
 
-  // 製品ごとのメタ情報と所属チケットを収集する（Map で挿入順を保持）
+  // 製品ごとのメタ情報と所属フェーズを収集する（Map で挿入順を保持）
   const productMeta = new Map<
     number,
-    { name: string; minStart: Date; maxEnd: Date; items: GanttTicketResponse[] }
+    { name: string; minStart: Date; maxEnd: Date; phases: GanttTicketResponse[] }
   >()
 
-  for (const t of tickets) {
-    const start = parseLocalDate(t.start_date)
-    const rawEnd = t.due_date
-      ? parseLocalDate(t.due_date)
+  for (const phase of phaseTickets) {
+    const start = parseLocalDate(phase.start_date)
+    const rawEnd = phase.due_date
+      ? parseLocalDate(phase.due_date)
       : new Date(start.getTime() + 7 * DAY_MS)
     const end = rawEnd <= start ? new Date(start.getTime() + DAY_MS) : rawEnd
 
-    const prev = productMeta.get(t.product.id)
+    const prev = productMeta.get(phase.product.id)
     if (!prev) {
-      productMeta.set(t.product.id, { name: t.product.name, minStart: start, maxEnd: end, items: [t] })
+      productMeta.set(phase.product.id, { name: phase.product.name, minStart: start, maxEnd: end, phases: [phase] })
     } else {
       if (start < prev.minStart) prev.minStart = start
       if (end > prev.maxEnd) prev.maxEnd = end
-      prev.items.push(t)
+      prev.phases.push(phase)
     }
   }
 
@@ -141,9 +146,10 @@ function toGanttTasks(
   // 0（falsy）を設定すると Number.MAX_VALUE 扱いになり最後尾に移動してしまう（グループ崩れ）。
   // 1 始まりにすることで全タスクが正しい順序でソートされる。
   let displayOrder = 1
+  let paletteIdx = 0
 
   for (const [pid, meta] of productMeta.entries()) {
-    const p = getPalette(pid)
+    const p = getPalette(paletteIdx++)
     const productTaskId = `product-${pid}`
 
     // 製品ヘッダー行（type: 'project'）
@@ -154,7 +160,7 @@ function toGanttTasks(
       end: meta.maxEnd,
       progress: 0,
       type: 'project',
-      hideChildren: collapsedProductIds.has(productTaskId),
+      hideChildren: collapsedGroupIds.has(productTaskId),
       displayOrder: displayOrder++,
       styles: {
         backgroundColor: p.projBg,
@@ -164,25 +170,25 @@ function toGanttTasks(
       },
     })
 
-    // 製品行の直後に子タスクを連番で配置する（gantt-task-react の配列順要件）
-    for (const t of meta.items) {
-      const start = parseLocalDate(t.start_date)
-      const rawEnd = t.due_date
-        ? parseLocalDate(t.due_date)
+    // 製品行の直後にフェーズを連番で配置する（gantt-task-react の配列順要件）
+    for (const phase of meta.phases) {
+      const start = parseLocalDate(phase.start_date)
+      const rawEnd = phase.due_date
+        ? parseLocalDate(phase.due_date)
         : new Date(start.getTime() + 7 * DAY_MS)
       const end = rawEnd <= start ? new Date(start.getTime() + DAY_MS) : rawEnd
 
-      // 前後関係: フィルタ後に存在するタスク ID のみ dependencies に含める（描画エラー防止）
-      const dependencies = t.predecessor_ids
-        .filter((id) => allTicketIds.has(id))
-        .map((id) => `ticket-${id}`)
+      // 先行関係: フィルタ後に存在するフェーズ ID のみ dependencies に含める（描画エラー防止）
+      const dependencies = phase.predecessor_ids
+        .filter((id) => allPhaseIds.has(id))
+        .map((id) => `phase-${id}`)
 
       tasks.push({
-        id: `ticket-${t.id}`,
-        name: `  #${t.id} ${t.subject}`,
+        id: `phase-${phase.id}`,
+        name: phase.subject,
         start,
         end,
-        progress: t.done_ratio,
+        progress: phase.done_ratio,
         type: 'task',
         project: productTaskId,
         displayOrder: displayOrder++,
@@ -200,12 +206,19 @@ function toGanttTasks(
   return tasks
 }
 
+
 export default function SCR002_GanttChartPage() {
-  const [projectId, setProjectId] = useState<number | ''>('')
+  const [searchParams] = useSearchParams()
+
+  const [projectId, setProjectId] = useState<number | ''>(() => {
+    const pid = searchParams.get('project_id')
+    return pid ? parseInt(pid, 10) : ''
+  })
   const [statusFilter, setStatusFilter] = useState<TicketStatus | ''>('')
-  const [trackerFilter, setTrackerFilter] = useState<TicketTracker | ''>('')
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week)
-  const [collapsedProductIds, setCollapsedProductIds] = useState<ReadonlySet<string>>(new Set())
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<ReadonlySet<string>>(new Set())
+  /** フェーズ行クリック時に残タスクパネルへ表示するフェーズチケット ID。 */
+  const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(null)
 
   /**
    * gantt-task-react は内部 useEffect で barTasks を設定するため、
@@ -239,9 +252,8 @@ export default function SCR002_GanttChartPage() {
     () => ({
       ...(projectId !== '' ? { project_id: projectId } : {}),
       ...(statusFilter !== '' ? { status: statusFilter } : {}),
-      ...(trackerFilter !== '' ? { tracker: trackerFilter } : {}),
     }),
-    [projectId, statusFilter, trackerFilter],
+    [projectId, statusFilter],
   )
 
   const { data, isPending, isError } = useQuery({
@@ -250,11 +262,12 @@ export default function SCR002_GanttChartPage() {
     staleTime: 30 * 1000,
   })
 
-  // フィルタ変更時に折りたたみ状態をリセットする（render-time setState パターン）
+  // フィルタ変更時に折りたたみ状態・選択フェーズをリセットする（render-time setState パターン）
   const [prevQuery, setPrevQuery] = useState(ganttQuery)
   if (ganttQuery !== prevQuery) {
     setPrevQuery(ganttQuery)
-    setCollapsedProductIds(new Set())
+    setCollapsedGroupIds(new Set())
+    setSelectedPhaseId(null)
   }
 
   // data が変化したとき（API レスポンス到着時）に ganttVisible をリセットし、
@@ -274,9 +287,40 @@ export default function SCR002_GanttChartPage() {
     return () => cancelAnimationFrame(rafId)
   }, [data])
 
+  /** 選択中のフェーズチケット。 */
+  const selectedPhase = useMemo(
+    () =>
+      selectedPhaseId !== null
+        ? (data?.items.find((t) => t.id === selectedPhaseId && t.tracker === 'phase') ?? null)
+        : null,
+    [selectedPhaseId, data],
+  )
+
+  /**
+   * 選択フェーズに属する未完了タスク一覧。
+   * closed / rejected / resolved は「完了済み」として除外する。
+   */
+  const remainingTasks = useMemo(
+    () =>
+      selectedPhaseId !== null
+        ? (data?.items.filter(
+          (t) =>
+            t.parent_id === selectedPhaseId &&
+            t.tracker !== 'phase' &&
+            t.status !== 'closed' &&
+            t.status !== 'rejected' &&
+            t.status !== 'resolved',
+        ) ?? [])
+        : [],
+    [selectedPhaseId, data],
+  )
+
   const ganttTasks = useMemo(
-    () => (data?.items?.length ? toGanttTasks(data.items, collapsedProductIds) : []),
-    [data, collapsedProductIds],
+    () => {
+      if (!data?.items?.length) return []
+      return toGanttTasksByProductPhase(data.items, collapsedGroupIds)
+    },
+    [data, collapsedGroupIds],
   )
 
   const columnWidth = viewMode === ViewMode.Day ? 60 : viewMode === ViewMode.Week ? 150 : 250
@@ -312,16 +356,6 @@ export default function SCR002_GanttChartPage() {
               <MenuItem value="">すべて</MenuItem>
               {(Object.keys(STATUS_LABEL) as TicketStatus[]).map((s) => (
                 <MenuItem key={s} value={s}>{STATUS_LABEL[s]}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <FormControl size="small" sx={{ minWidth: 130 }}>
-            <InputLabel>トラッカー</InputLabel>
-            <Select value={trackerFilter} label="トラッカー" onChange={(e) => setTrackerFilter(e.target.value as TicketTracker | '')}>
-              <MenuItem value="">すべて</MenuItem>
-              {(Object.keys(TRACKER_LABEL) as TicketTracker[]).map((tr) => (
-                <MenuItem key={tr} value={tr}>{TRACKER_LABEL[tr]}</MenuItem>
               ))}
             </Select>
           </FormControl>
@@ -377,9 +411,19 @@ export default function SCR002_GanttChartPage() {
               ganttHeight={ganttHeight}
               listCellWidth="220px"
               columnWidth={columnWidth}
+              onSelect={(task, isSelected) => {
+                // フェーズバー選択で残タスクパネルを表示する
+                if (!isSelected) {
+                  setSelectedPhaseId(null)
+                  return
+                }
+                if (!task.id.startsWith('phase-')) return
+                const phaseId = parseInt(task.id.replace('phase-', ''), 10)
+                setSelectedPhaseId(isNaN(phaseId) ? null : phaseId)
+              }}
               onExpanderClick={(task) => {
                 if (task.type !== 'project') return
-                setCollapsedProductIds((prev) => {
+                setCollapsedGroupIds((prev) => {
                   const next = new Set(prev)
                   if (task.hideChildren) next.add(task.id)
                   else next.delete(task.id)
@@ -395,6 +439,74 @@ export default function SCR002_GanttChartPage() {
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
           {data.total} 件表示（最大 500 件）
         </Typography>
+      )}
+
+      {/* フェーズバーをクリックすると未完了タスク一覧を表示する */}
+      {selectedPhase !== null && (
+        <Paper sx={{ p: 2, mt: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              {selectedPhase.subject}　残タスク（{remainingTasks.length} 件）
+            </Typography>
+            <Button size="small" variant="outlined" onClick={() => setSelectedPhaseId(null)}>
+              閉じる
+            </Button>
+          </Box>
+          <Divider sx={{ mb: 1.5 }} />
+          {remainingTasks.length === 0 ? (
+            <Typography color="text.secondary">このフェーズの未完了タスクはありません。</Typography>
+          ) : (
+            <Stack spacing={1}>
+              {remainingTasks.map((t) => (
+                <Box
+                  key={t.id}
+                  sx={{
+                    p: 1.5,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                  }}
+                >
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      #{t.id}　{t.subject}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                      <Chip
+                        label={STATUS_LABEL[t.status]}
+                        size="small"
+                        color={STATUS_CHIP_COLOR[t.status]}
+                        variant="outlined"
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        {t.assignee?.display_name ?? '未割当'}
+                      </Typography>
+                      {t.due_date && (
+                        <Typography variant="caption" color="text.secondary">
+                          期日: {t.due_date}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                  {/* 進捗バー */}
+                  <Box sx={{ width: 130, flexShrink: 0 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mb: 0.5 }}>
+                      {t.done_ratio}%
+                    </Typography>
+                    <LinearProgress
+                      variant="determinate"
+                      value={t.done_ratio}
+                      sx={{ height: 6, borderRadius: 3 }}
+                    />
+                  </Box>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Paper>
       )}
     </Box>
   )

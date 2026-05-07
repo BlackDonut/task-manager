@@ -19,6 +19,15 @@ class TicketOrm(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id"), nullable=False)
+    # release_id: 製品作業サイクル（ProductReleaseOrm）への参照。
+    # nullable=True で既存データに後方互換を保つ。NULL の場合はサイクル未分類扱い。
+    # TODO(impact): ALTER TABLE dbo.tickets ADD release_id INT NULL を要実行（migration を参照）
+    release_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("product_releases.id"),
+        nullable=True,
+        comment="作業サイクル ID (product_releases.id)。NULL=サイクル未分類",
+    )
     parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("tickets.id"), nullable=True)
     tracker: Mapped[str] = mapped_column(NVARCHAR(20), nullable=False)
     status: Mapped[str] = mapped_column(NVARCHAR(20), nullable=False)

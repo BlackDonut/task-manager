@@ -8,7 +8,11 @@
 - 1 トランザクションあたり ``BULK_BATCH_SIZE`` 件単位でコミット分割する
 - 1 リクエストあたり 1000 件を超える items を ``bulk_update`` に渡すことは L1 違反
 
-Phase 0 ではプロトコルと DTO のみ定義。実装は Phase 2 以降で行う。
+Phase 2 実装: ``app/common/services/bulk_update_service.py`` の ``BulkUpdateServiceImpl``
+  - 対応エンティティ: "Task"（TicketOrm）
+  - 使用方法:
+      service = BulkUpdateServiceImpl(session)
+      result = await service.bulk_update(items, user_id)
 """
 
 from __future__ import annotations

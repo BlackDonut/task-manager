@@ -13,7 +13,7 @@ applyTo: "frontend/src/**/*.{ts,tsx}"
 ## 概要
 
 React 19 + TypeScript + MUI v9 + TanStack Query v5 + react-i18next v15（4ロケール）を使用する。
-60 画面以上・8 名並行開発のため、統一パターンで可読性・保守性を担保する。
+8 名並行開発のため、統一パターンで可読性・保守性を担保する。
 
 ---
 

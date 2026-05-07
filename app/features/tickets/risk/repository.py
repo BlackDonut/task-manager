@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import case, cast, func, select
-from sqlalchemy import Integer as SAInteger
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -31,11 +30,11 @@ from app.models.user import UserOrm
 
 logger = get_logger(component="tickets.risk.repository")
 
-# 期限超過・リスクチケットの最大取得件数
-_RISK_MAX_ITEMS = 200
-
 # 完了扱いのステータス（これらは遅延カウントから除外する）
 _DONE_STATUSES = ("resolved", "closed", "rejected")
+
+# TODOチケット一覧の最大取得件数（未着手タスクは通常少数のため 200 件上限を維持）
+_TODO_MAX_ITEMS = 200
 
 
 def _build_product_scope_subquery(project_id: int | None) -> list:
@@ -69,7 +68,7 @@ class RiskDashboardRepository:
         try:
             # 現在日付（UTC→ローカルは要件確定後に調整）
             today: datetime.date = self._clock.now().date()
-            at_risk_threshold: datetime.date = today + datetime.timedelta(days=3)
+            one_week_threshold: datetime.date = today + datetime.timedelta(days=7)
 
             scope_filter = _build_product_scope_subquery(query.project_id)
             base_where = [TicketOrm.delete_flg == 0, *scope_filter]
@@ -98,7 +97,20 @@ class RiskDashboardRepository:
                     *active_where,
                     TicketOrm.due_date.isnot(None),
                     TicketOrm.due_date >= today,
-                    TicketOrm.due_date <= at_risk_threshold,
+                    TicketOrm.due_date <= one_week_threshold,
+                )
+            )
+            # 未着手（status=new）かつ期限が 1 週間超または期限なし
+            todo_count_stmt = (
+                select(func.count())
+                .select_from(TicketOrm)
+                .where(
+                    *base_where,
+                    TicketOrm.status == "new",
+                    or_(
+                        TicketOrm.due_date.is_(None),
+                        TicketOrm.due_date > one_week_threshold,
+                    ),
                 )
             )
             unassigned_stmt = (
@@ -119,12 +131,14 @@ class RiskDashboardRepository:
             at_risk_count = (await self._session.scalar(at_risk_stmt)) or 0
             unassigned_count = (await self._session.scalar(unassigned_stmt)) or 0
             in_progress_count = (await self._session.scalar(in_progress_stmt)) or 0
+            todo_count = (await self._session.scalar(todo_count_stmt)) or 0
 
             summary = RiskSummary(
                 overdue_count=overdue_count,
                 at_risk_count=at_risk_count,
                 unassigned_count=unassigned_count,
                 in_progress_count=in_progress_count,
+                todo_count=todo_count,
             )
 
             # ----------------------------------------------------------------
@@ -148,8 +162,6 @@ class RiskDashboardRepository:
                     ProductOrm.id.label("product_id"),
                     ProductOrm.name.label("product_name"),
                     func.count(TicketOrm.id).label("total_count"),
-                    # func.avg は FLOAT を返すため INTEGER にキャストして % 表示に合わせる
-                    cast(func.avg(TicketOrm.done_ratio), SAInteger).label("avg_progress"),
                     func.sum(overdue_case).label("overdue_count"),
                 )
                 .join(TicketOrm, TicketOrm.product_id == ProductOrm.id)
@@ -164,45 +176,19 @@ class RiskDashboardRepository:
                 ProductRiskSummary(
                     product=ProductResponse(id=row.product_id, name=row.product_name),
                     total_count=row.total_count,
-                    avg_progress=int(row.avg_progress or 0),
                     overdue_count=int(row.overdue_count or 0),
                 )
                 for row in agg_rows
             ]
 
             # ----------------------------------------------------------------
-            # 3. リスクチケット一覧（遅延中 + 期限 3 日以内、最大 200 件）
-            #    期日昇順（超過が先頭・未割当を優先するため NULLs LAST の代替として
-            #    CASE WHEN assignee_id IS NULL THEN 0 ELSE 1 END を第2キーに使用）
+            # 3. 遅延チケット一覧（due_date < today・件数制限なし）
+            #    期日昇順（最も超過が大きいものが先頭）・未割当優先
             # ----------------------------------------------------------------
 
-            risk_where = [
-                *active_where,
-                TicketOrm.due_date.isnot(None),
-                TicketOrm.due_date <= at_risk_threshold,
-            ]
-
-            risk_stmt = (
-                select(TicketOrm)
-                .options(
-                    joinedload(TicketOrm.product),
-                    joinedload(TicketOrm.assignee),
-                    # 前後関係: selectinload でまとめて取得
-                    selectinload(TicketOrm.dependencies_as_successor),
-                )
-                .where(*risk_where)
-                .order_by(
-                    TicketOrm.due_date.asc(),
-                    # 未割当を同一期日内で先頭に表示（0=未割当, 1=割当済み）
-                    case((TicketOrm.assignee_id.is_(None), 0), else_=1).asc(),
-                )
-                .limit(_RISK_MAX_ITEMS)
-            )
-
-            risk_rows = (await self._session.execute(risk_stmt)).unique().scalars().all()
-
-            risk_tickets = [
-                RiskTicketResponse(
+            def _to_risk_ticket(t: TicketOrm) -> RiskTicketResponse:
+                """ORM インスタンスを RiskTicketResponse に変換する共通ヘルパー。"""
+                return RiskTicketResponse(
                     id=t.id,
                     subject=t.subject,
                     product=ProductResponse(id=t.product.id, name=t.product.name),
@@ -219,14 +205,101 @@ class RiskDashboardRepository:
                     done_ratio=t.done_ratio,
                     predecessor_ids=[dep.predecessor_id for dep in t.dependencies_as_successor],
                 )
-                for t in risk_rows
+
+            overdue_where = [
+                *active_where,
+                TicketOrm.due_date.isnot(None),
+                TicketOrm.due_date < today,
             ]
+
+            overdue_tickets_stmt = (
+                select(TicketOrm)
+                .options(
+                    joinedload(TicketOrm.product),
+                    joinedload(TicketOrm.assignee),
+                    selectinload(TicketOrm.dependencies_as_successor),
+                )
+                .where(*overdue_where)
+                .order_by(
+                    TicketOrm.due_date.asc(),
+                    case((TicketOrm.assignee_id.is_(None), 0), else_=1).asc(),
+                )
+            )
+
+            overdue_rows = (await self._session.execute(overdue_tickets_stmt)).unique().scalars().all()
+            overdue_tickets = [_to_risk_ticket(t) for t in overdue_rows]
+
+            # ----------------------------------------------------------------
+            # 4. 直近1週間チケット一覧（today <= due_date <= one_week_threshold・件数制限なし）
+            #    7日間分のため大量にはならない。期日昇順・未割当優先
+            # ----------------------------------------------------------------
+
+            at_risk_where = [
+                *active_where,
+                TicketOrm.due_date.isnot(None),
+                TicketOrm.due_date >= today,
+                TicketOrm.due_date <= one_week_threshold,
+            ]
+
+            at_risk_stmt = (
+                select(TicketOrm)
+                .options(
+                    joinedload(TicketOrm.product),
+                    joinedload(TicketOrm.assignee),
+                    selectinload(TicketOrm.dependencies_as_successor),
+                )
+                .where(*at_risk_where)
+                .order_by(
+                    TicketOrm.due_date.asc(),
+                    case((TicketOrm.assignee_id.is_(None), 0), else_=1).asc(),
+                )
+            )
+
+            at_risk_rows = (await self._session.execute(at_risk_stmt)).unique().scalars().all()
+            at_risk_tickets = [_to_risk_ticket(t) for t in at_risk_rows]
+
+            # ----------------------------------------------------------------
+            # 5. TODOチケット一覧（status=new かつ期限が 1 週間超または期限なし）
+            #    優先度順（urgent > high > normal > low）、ID 昇順
+            # ----------------------------------------------------------------
+
+            todo_stmt = (
+                select(TicketOrm)
+                .options(
+                    joinedload(TicketOrm.product),
+                    joinedload(TicketOrm.assignee),
+                    selectinload(TicketOrm.dependencies_as_successor),
+                )
+                .where(
+                    *base_where,
+                    TicketOrm.status == "new",
+                    or_(
+                        TicketOrm.due_date.is_(None),
+                        TicketOrm.due_date > one_week_threshold,
+                    ),
+                )
+                .order_by(
+                    case(
+                        (TicketOrm.priority == "urgent", 0),
+                        (TicketOrm.priority == "high", 1),
+                        (TicketOrm.priority == "normal", 2),
+                        else_=3,
+                    ).asc(),
+                    TicketOrm.id.asc(),
+                )
+                .limit(_TODO_MAX_ITEMS)
+            )
+
+            todo_rows = (await self._session.execute(todo_stmt)).unique().scalars().all()
+            todo_tickets = [_to_risk_ticket(t) for t in todo_rows]
 
             return Ok(
                 RiskDashboardResponse(
                     summary=summary,
                     product_summaries=product_summaries,
-                    risk_tickets=risk_tickets,
+                    overdue_tickets=overdue_tickets,
+                    at_risk_tickets=at_risk_tickets,
+                    todo_tickets=todo_tickets,
                 )
             )
         except Exception as exc:

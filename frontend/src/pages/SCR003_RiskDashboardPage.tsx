@@ -1,10 +1,12 @@
 /**
- * 遅延・リスク管理ダッシュボード（SCR-D001）。
+ * ダッシュボード（SCR-D001）。
  *
  * 表示内容:
- *   1. サマリーカード（期限超過 / 期限 3 日以内 / 進行中 / 未割当）
- *   2. 製品別進捗パネル（進捗率バー + 遅延件数バッジ）
- *   3. リスクチケット一覧（期日昇順・未割当優先・最大 200 件）
+ *   1. サマリーカード（期限超過 / 期限 1 週間以内 / 進行中 / 未割当 / TODO）
+ *   2. 製品別遅延パネル（遅延件数バッジ）
+ *   3. 遅延チケット一覧（due_date < 今日・全件表示・ページネーションなし）
+ *   4. 直近1週間チケット一覧（今日 <= due_date <= 7日後・20件/ページ）
+ *   5. TODOタスク一覧（未着手・期限なしまたは 1 週間超）
  *
  * データはシステムが自動で浮上させる（「人任せ」を排除）。
  */
@@ -16,8 +18,8 @@ import {
   Chip,
   FormControl,
   InputLabel,
-  LinearProgress,
   MenuItem,
+  Pagination,
   Paper,
   Select,
   Skeleton,
@@ -35,7 +37,8 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlined'
 import AccessTimeIcon from '@mui/icons-material/AccessTime'
 import PersonOffIcon from '@mui/icons-material/PersonOff'
-import TrendingUpIcon from '@mui/icons-material/TrendingUp'
+import ChecklistIcon from '@mui/icons-material/Checklist'
+import EventBusyIcon from '@mui/icons-material/EventBusy'
 import { projectsApi, ticketsApi } from '../api/endpoints/apis'
 import type {
   ProductRiskSummary,
@@ -83,10 +86,17 @@ const TRACKER_LABEL: Record<TicketTracker, string> = {
   feature: '機能',
   support: 'サポート',
   task: 'タスク',
+  phase: 'フェーズ',
 }
 
 /** テーブルの列数（空行の colSpan に使用） */
 const COL_COUNT = 8
+
+/** 直近1週間一覧のページサイズ */
+const AT_RISK_PAGE_SIZE = 10
+
+/** TODO タスク一覧のページサイズ */
+const TODO_PAGE_SIZE = 10
 
 // ---- サマリーカード -------------------------------------------------------
 
@@ -139,37 +149,24 @@ interface ProductProgressPanelProps {
 function ProductProgressPanel({ summaries }: ProductProgressPanelProps) {
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
-        <TrendingUpIcon fontSize="small" color="action" />
-        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>製品別進捗</Typography>
-      </Stack>
+      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1.5 }}>製品別遅延状況</Typography>
       <Stack spacing={1.5}>
         {summaries.map((s) => (
-          <Box key={s.product.id}>
-            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{s.product.name}</Typography>
-                {s.overdue_count > 0 && (
-                  <Chip
-                    label={`遅延 ${s.overdue_count}件`}
-                    size="small"
-                    color="error"
-                    variant="outlined"
-                    sx={{ height: 18, fontSize: '0.68rem' }}
-                  />
-                )}
-              </Stack>
-              <Typography variant="caption" color="text.secondary">
-                {s.avg_progress}% ({s.total_count}件)
-              </Typography>
+          <Stack key={s.product.id} direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <Typography variant="body2" sx={{ fontWeight: 'medium' }}>{s.product.name}</Typography>
+              <Chip
+                label={`遅延 ${s.overdue_count}件`}
+                size="small"
+                color={s.overdue_count > 0 ? 'error' : 'default'}
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.68rem' }}
+              />
             </Stack>
-            <LinearProgress
-              variant="determinate"
-              value={s.avg_progress}
-              color={s.overdue_count > 0 ? 'error' : s.avg_progress >= 80 ? 'success' : 'primary'}
-              sx={{ height: 8, borderRadius: 4 }}
-            />
-          </Box>
+            <Typography variant="caption" color="text.secondary">
+              {s.total_count}件
+            </Typography>
+          </Stack>
         ))}
       </Stack>
     </Paper>
@@ -184,7 +181,8 @@ interface RiskTicketRowProps {
 
 function RiskTicketRow({ ticket }: RiskTicketRowProps) {
   const isOverdue = ticket.overdue_days > 0
-  const isToday = ticket.overdue_days === 0
+  const isToday = ticket.overdue_days === 0 && ticket.due_date !== null
+  const isNoDueDate = ticket.due_date === null
 
   return (
     <TableRow
@@ -195,7 +193,16 @@ function RiskTicketRow({ ticket }: RiskTicketRowProps) {
     >
       {/* 期限状態バッジ */}
       <TableCell sx={{ width: 110 }}>
-        {isOverdue ? (
+        {isNoDueDate ? (
+          <Chip
+            icon={<EventBusyIcon />}
+            label="期限なし"
+            color="default"
+            size="small"
+            variant="outlined"
+            sx={{ fontSize: '0.7rem' }}
+          />
+        ) : isOverdue ? (
           <Chip
             icon={<ErrorOutlineIcon />}
             label={`${ticket.overdue_days}日超過`}
@@ -292,6 +299,8 @@ function RiskTicketRow({ ticket }: RiskTicketRowProps) {
 
 export default function SCR003_RiskDashboardPage() {
   const [projectId, setProjectId] = useState<number | ''>('')
+  const [atRiskPage, setAtRiskPage] = useState(1)
+  const [todoPage, setTodoPage] = useState(1)
 
   const { data: projectsData } = useQuery({
     queryKey: PROJECTS_QUERY_KEY,
@@ -311,13 +320,29 @@ export default function SCR003_RiskDashboardPage() {
     refetchInterval: 5 * 60 * 1000, // 5 分ごとに自動更新（遅延は時間経過で変化するため）
   })
 
-  const hasRiskTickets = Boolean(data?.risk_tickets?.length)
+  const hasOverdueTickets = Boolean(data?.overdue_tickets?.length)
+  const hasAtRiskTickets = Boolean(data?.at_risk_tickets?.length)
+  const hasTodoTickets = Boolean(data?.todo_tickets?.length)
+
+  /** 直近1週間一覧の現在ページスライス */
+  const pagedAtRiskTickets = data?.at_risk_tickets.slice(
+    (atRiskPage - 1) * AT_RISK_PAGE_SIZE,
+    atRiskPage * AT_RISK_PAGE_SIZE,
+  ) ?? []
+  const atRiskTotalPages = Math.ceil((data?.at_risk_tickets.length ?? 0) / AT_RISK_PAGE_SIZE)
+
+  /** TODO タスク一覧の現在ページスライス */
+  const pagedTodoTickets = data?.todo_tickets.slice(
+    (todoPage - 1) * TODO_PAGE_SIZE,
+    todoPage * TODO_PAGE_SIZE,
+  ) ?? []
+  const todoTotalPages = Math.ceil((data?.todo_tickets.length ?? 0) / TODO_PAGE_SIZE)
 
   return (
     <Box sx={{ p: 3 }}>
       {/* ページヘッダー */}
       <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>遅延・リスク管理</Typography>
+        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>ダッシュボード</Typography>
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>プロジェクト</InputLabel>
           <Select value={projectId} label="プロジェクト" onChange={(e) => setProjectId(e.target.value as number | '')}>
@@ -350,11 +375,11 @@ export default function SCR003_RiskDashboardPage() {
             description="未完了チケットのうち期限を過ぎたもの"
           />
           <SummaryCard
-            label="期限 3 日以内"
+            label="期限 1 週間以内"
             count={data.summary.at_risk_count}
             warnThreshold={5}
             icon={<WarningAmberIcon />}
-            description="今後 3 日以内に期限が来る未完了チケット"
+            description="今後 1 週間以内に期限が来る未完了チケット"
           />
           <SummaryCard
             label="進行中"
@@ -369,6 +394,12 @@ export default function SCR003_RiskDashboardPage() {
             icon={<PersonOffIcon />}
             description="未完了チケットのうち担当者がいないもの"
           />
+          <SummaryCard
+            label="TODOタスク"
+            count={data.summary.todo_count}
+            icon={<ChecklistIcon />}
+            description="未着手（期限なしまたは 1 週間超）のタスク"
+          />
         </Stack>
       ) : null}
 
@@ -381,29 +412,30 @@ export default function SCR003_RiskDashboardPage() {
         </Box>
       ) : null}
 
-      {/* リスクチケット一覧 */}
+      {/* 遅延チケット一覧（全件表示・ページネーションなし） */}
       <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
         <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', backgroundColor: 'grey.50' }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <WarningAmberIcon fontSize="small" color="warning" />
+            <ErrorOutlineIcon fontSize="small" color="error" />
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-              遅延・期限直前チケット一覧
+              遅延チケット一覧
             </Typography>
             {data && (
               <Chip
-                label={`${data.risk_tickets.length} 件`}
+                label={`${data.overdue_tickets.length} 件`}
                 size="small"
+                color="error"
                 variant="outlined"
                 sx={{ height: 18, fontSize: '0.7rem' }}
               />
             )}
             <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-              ※ 期日昇順・担当者未割当優先。最大 200 件
+              ※ 期日昇順・担当者未割当優先。全件表示
             </Typography>
           </Stack>
         </Box>
         <TableContainer>
-          <Table size="small" aria-label="リスクチケット一覧">
+          <Table size="small" aria-label="遅延チケット一覧">
             <TableHead>
               <TableRow sx={{ backgroundColor: 'grey.100' }}>
                 <TableCell sx={{ fontWeight: 'bold', width: 110 }}>期限状態</TableCell>
@@ -425,15 +457,15 @@ export default function SCR003_RiskDashboardPage() {
                     ))}
                   </TableRow>
                 ))
-                : hasRiskTickets
-                  ? data!.risk_tickets.map((ticket) => (
+                : hasOverdueTickets
+                  ? data!.overdue_tickets.map((ticket) => (
                     <RiskTicketRow key={ticket.id} ticket={ticket} />
                   ))
                   : (
                     <TableRow>
                       <TableCell colSpan={COL_COUNT} align="center" sx={{ py: 4 }}>
                         <Typography variant="body2" color="success.main" sx={{ fontWeight: 'medium' }}>
-                          遅延・期限直前のチケットはありません ✓
+                          期限超過のチケットはありません ✓
                         </Typography>
                       </TableCell>
                     </TableRow>
@@ -441,6 +473,154 @@ export default function SCR003_RiskDashboardPage() {
             </TableBody>
           </Table>
         </TableContainer>
+      </Paper>
+
+      {/* 直近1週間チケット一覧（20件/ページ） */}
+      <Paper variant="outlined" sx={{ overflow: 'hidden', mt: 3 }}>
+        <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', backgroundColor: 'grey.50' }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <WarningAmberIcon fontSize="small" color="warning" />
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+              直近1週間チケット一覧
+            </Typography>
+            {data && (
+              <Chip
+                label={`${data.at_risk_tickets.length} 件`}
+                size="small"
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.7rem' }}
+              />
+            )}
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+              ※ 今日〜7日以内に期限が来るチケット。期日昇順・担当者未割当優先
+            </Typography>
+          </Stack>
+        </Box>
+        <TableContainer>
+          <Table size="small" aria-label="直近1週間チケット一覧">
+            <TableHead>
+              <TableRow sx={{ backgroundColor: 'grey.100' }}>
+                <TableCell sx={{ fontWeight: 'bold', width: 110 }}>期限状態</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 60 }}>#</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>トラッカー</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 100 }}>ステータス</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>優先度</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>題名 / 製品</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 120 }}>担当者</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 70, textAlign: 'right' }}>進捗</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {isPending
+                ? Array.from({ length: 6 }).map((_, i) => (
+                  <TableRow key={i}>
+                    {Array.from({ length: COL_COUNT }).map((__, j) => (
+                      <TableCell key={j}><Skeleton variant="text" /></TableCell>
+                    ))}
+                  </TableRow>
+                ))
+                : hasAtRiskTickets
+                  ? pagedAtRiskTickets.map((ticket) => (
+                    <RiskTicketRow key={ticket.id} ticket={ticket} />
+                  ))
+                  : (
+                    <TableRow>
+                      <TableCell colSpan={COL_COUNT} align="center" sx={{ py: 4 }}>
+                        <Typography variant="body2" color="success.main" sx={{ fontWeight: 'medium' }}>
+                          直近1週間に期限が来るチケットはありません ✓
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {/* ページネーション（直近1週間一覧） */}
+        {!isPending && atRiskTotalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5, borderTop: 1, borderColor: 'divider' }}>
+            <Pagination
+              count={atRiskTotalPages}
+              page={atRiskPage}
+              onChange={(_: React.ChangeEvent<unknown>, p: number) => setAtRiskPage(p)}
+              size="small"
+              color="primary"
+            />
+          </Box>
+        )}
+      </Paper>
+
+      {/* TODO タスク一覧 */}
+      <Paper variant="outlined" sx={{ overflow: 'hidden', mt: 3 }}>
+        <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: 'divider', backgroundColor: 'grey.50' }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <ChecklistIcon fontSize="small" color="info" />
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+              TODO タスク一覧
+            </Typography>
+            {data && (
+              <Chip
+                label={`${data.todo_tickets.length} 件`}
+                size="small"
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.7rem' }}
+              />
+            )}
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+              ※ 未着手（status=new）かつ期限なしまたは 1 週間超のタスク。優先度順。最大 200 件
+            </Typography>
+          </Stack>
+        </Box>
+        <TableContainer>
+          <Table size="small" aria-label="TODO タスク一覧">
+            <TableHead>
+              <TableRow sx={{ backgroundColor: 'grey.100' }}>
+                <TableCell sx={{ fontWeight: 'bold', width: 110 }}>期限</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 60 }}>#</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>トラッカー</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 100 }}>ステータス</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>優先度</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>題名 / 製品</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 120 }}>担当者</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 70, textAlign: 'right' }}>進捗</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {isPending
+                ? Array.from({ length: 6 }).map((_, i) => (
+                  <TableRow key={i}>
+                    {Array.from({ length: COL_COUNT }).map((__, j) => (
+                      <TableCell key={j}><Skeleton variant="text" /></TableCell>
+                    ))}
+                  </TableRow>
+                ))
+                : hasTodoTickets
+                  ? pagedTodoTickets.map((ticket) => (
+                    <RiskTicketRow key={ticket.id} ticket={ticket} />
+                  ))
+                  : (
+                    <TableRow>
+                      <TableCell colSpan={COL_COUNT} align="center" sx={{ py: 4 }}>
+                        <Typography variant="body2" color="success.main" sx={{ fontWeight: 'medium' }}>
+                          未着手タスクはありません ✓
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {/* ページネーション（TODO タスク一覧） */}
+        {!isPending && todoTotalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5, borderTop: 1, borderColor: 'divider' }}>
+            <Pagination
+              count={todoTotalPages}
+              page={todoPage}
+              onChange={(_: React.ChangeEvent<unknown>, p: number) => setTodoPage(p)}
+              size="small"
+              color="primary"
+            />
+          </Box>
+        )}
       </Paper>
     </Box>
   )

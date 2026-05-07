@@ -40,13 +40,14 @@ async def list_tickets(
     request: Request,
     project_id: int | None = Query(default=None),
     product_id: int | None = Query(default=None),
+    release_id: int | None = Query(default=None, description="作業サイクル ID でフィルタ"),
     status: str | None = Query(default=None),
     priority: str | None = Query(default=None),
     tracker: str | None = Query(default=None),
     assignee_id: str | None = Query(default=None),
     keyword: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page_size: int = Query(default=100, ge=1, le=100),
     user: AuthenticatedUser = Depends(get_current_user),
     service: TicketListService = Depends(_get_service),
 ) -> TicketListResponse:
@@ -67,6 +68,7 @@ async def list_tickets(
     query = TicketListQuery(
         project_id=project_id,
         product_id=product_id,
+        release_id=release_id,
         status=status,  # type: ignore[arg-type]
         priority=priority,  # type: ignore[arg-type]
         tracker=tracker,  # type: ignore[arg-type]

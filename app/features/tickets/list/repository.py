@@ -37,6 +37,7 @@ def _to_ticket_response(t: TicketOrm) -> TicketResponse:
         id=t.id,
         product=ProductResponse(id=t.product.id, name=t.product.name),
         parent_id=t.parent_id,
+        release_id=t.release_id,
         tracker=t.tracker,  # type: ignore[arg-type]
         status=t.status,  # type: ignore[arg-type]
         priority=t.priority,  # type: ignore[arg-type]
@@ -99,6 +100,8 @@ class TicketListRepository:
                 base_where.append(TicketOrm.tracker == query.tracker)
             if query.assignee_id is not None:
                 base_where.append(TicketOrm.assignee_id == query.assignee_id)
+            if query.release_id is not None:
+                base_where.append(TicketOrm.release_id == query.release_id)
             if query.keyword is not None:
                 base_where.append(TicketOrm.subject.contains(query.keyword))
 

@@ -112,6 +112,16 @@ def create_app() -> FastAPI:
 
     app.include_router(tickets_router)
 
+    # チケット作成（SCR-T001 タスク追加ダイアログ）
+    from app.features.tickets.create.router import router as tickets_create_router
+
+    app.include_router(tickets_create_router)
+
+    # チケット更新（SCR-T001 編集ダイアログ）
+    from app.features.tickets.update.router import router as tickets_update_router
+
+    app.include_router(tickets_update_router)
+
     # ガントチャート（SCR-G001）
     from app.features.tickets.gantt.router import router as tickets_gantt_router
 
@@ -131,6 +141,36 @@ def create_app() -> FastAPI:
     from app.features.products.list.router import router as products_router
 
     app.include_router(products_router)
+
+    # 製品作業サイクル（SCR-T001 リリースタブ切り替え・リリース後変更管理）
+    from app.features.product_releases.list.router import router as product_releases_router
+
+    app.include_router(product_releases_router)
+
+    # タスクグループ（SCR-T001 クロス製品・クロスプロジェクトのチケット束ね・自動完了）
+    from app.features.task_groups.list.router import router as task_groups_router
+
+    app.include_router(task_groups_router)
+
+    # フェーズ進捗マトリクス（SCR005 フェーズゲート確認）
+    from app.features.tickets.matrix.router import router as tickets_matrix_router
+
+    app.include_router(tickets_matrix_router)
+
+    # チケット承認フロー（承認申請・承認・却下）
+    from app.features.tickets.approval.router import router as tickets_approval_router
+
+    app.include_router(tickets_approval_router)
+
+    # チケットコメント
+    from app.features.tickets.comments.router import router as tickets_comments_router
+
+    app.include_router(tickets_comments_router)
+
+    # チケット添付ファイル
+    from app.features.tickets.attachments.router import router as tickets_attachments_router
+
+    app.include_router(tickets_attachments_router)
 
     # 認証（login / logout）
     try:
